@@ -182,7 +182,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     passwordInput: string
   ): Promise<{ success: boolean; role: UserRole; error?: string }> => {
     setError(null);
-    setIsLoading(true);
 
     const cleanUsername = usernameInput.trim().toLowerCase();
     const derivedEmail = deriveAuthEmail(cleanUsername);
@@ -197,7 +196,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await firebaseSignOut(auth);
           const err = 'User profile record not found.';
           setError(err);
-          setIsLoading(false);
           return { success: false, role: 'customer', error: err };
         }
 
@@ -208,17 +206,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await firebaseSignOut(auth);
           const err = `Your account is ${profile.status}. Please contact Emprise Customer Care.`;
           setError(err);
-          setIsLoading(false);
           return { success: false, role: profile.role, error: err };
         }
 
         setUser(profile);
         setFirebaseUser(cred.user);
         lastActivityRef.current = Date.now();
-        setIsLoading(false);
         return { success: true, role: profile.role };
       } catch (fbErr: any) {
-        setIsLoading(false);
         let errorMsg = 'Invalid credentials. Please verify your username and password.';
 
         if (fbErr.code === 'auth/user-not-found' || fbErr.code === 'auth/wrong-password' || fbErr.code === 'auth/invalid-credential') {
@@ -240,7 +235,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const mockUser = mockStorage.getUserByUsername(cleanUsername);
 
       if (!mockUser) {
-        setIsLoading(false);
         const err = 'Invalid username or password.';
         setError(err);
         return { success: false, role: 'customer', error: err };
@@ -248,7 +242,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Check status
       if (mockUser.status === 'disabled' || mockUser.status === 'closed') {
-        setIsLoading(false);
         const err = `Account is ${mockUser.status}. Access restricted.`;
         setError(err);
         return { success: false, role: mockUser.role, error: err };
@@ -256,7 +249,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // Check password (accepts 'password123' or any password for newly registered mock users)
       if (passwordInput.length < 6) {
-        setIsLoading(false);
         const err = 'Password must be at least 6 characters.';
         setError(err);
         return { success: false, role: mockUser.role, error: err };
@@ -265,10 +257,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(mockUser);
       localStorage.setItem('emprise_mock_active_uid', mockUser.uid);
       lastActivityRef.current = Date.now();
-      setIsLoading(false);
       return { success: true, role: mockUser.role };
     } else {
-      setIsLoading(false);
       const err = 'Firebase is not configured. Live Firebase Authentication is required to log in.';
       setError(err);
       return { success: false, role: 'customer', error: err };
@@ -280,7 +270,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     formData: SignUpFormData
   ): Promise<{ success: boolean; accountNumber: string; error?: string }> => {
     setError(null);
-    setIsLoading(true);
 
     const cleanUsername = formData.username.trim().toLowerCase();
     const derivedEmail = deriveAuthEmail(cleanUsername);
@@ -296,10 +285,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Sign out right after signup so user logs in cleanly through the public login card
         await firebaseSignOut(auth);
 
-        setIsLoading(false);
         return { success: true, accountNumber: account.accountNumber };
       } catch (err: any) {
-        setIsLoading(false);
         let errorMsg = err.message || 'Unable to complete enrollment.';
         if (err.code === 'auth/email-already-in-use') {
           errorMsg = 'This username is already taken. Please choose another.';
@@ -314,16 +301,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await new Promise((res) => setTimeout(res, 500));
       try {
         const { account } = mockStorage.createUser(formData);
-        setIsLoading(false);
         return { success: true, accountNumber: account.accountNumber };
       } catch (err: any) {
-        setIsLoading(false);
         const errorMsg = err.message || 'Sign up failed.';
         setError(errorMsg);
         return { success: false, accountNumber: '', error: errorMsg };
       }
     } else {
-      setIsLoading(false);
       const errorMsg = 'Firebase is not configured. Enrollment requires active Firebase credentials.';
       setError(errorMsg);
       return { success: false, accountNumber: '', error: errorMsg };

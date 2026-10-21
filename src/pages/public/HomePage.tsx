@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Logo } from '../../components/common/Logo';
@@ -37,12 +37,13 @@ export const HomePage: React.FC = () => {
   const { login, error, clearError, user, role, isFirebaseActive } = useAuth();
   const navigate = useNavigate();
 
-  const [username, setUsername] = useState('elena.vance');
-  const [password, setPassword] = useState('password123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
 
   // If already logged in, show quick jump
   React.useEffect(() => {
@@ -59,6 +60,9 @@ export const HomePage: React.FC = () => {
 
     if (!username.trim() || !password) {
       setLocalError('Please enter both your username and password.');
+      if (!password && username.trim()) {
+        passwordInputRef.current?.focus();
+      }
       return;
     }
 
@@ -73,7 +77,11 @@ export const HomePage: React.FC = () => {
         navigate('/dashboard');
       }
     } else {
+      setPassword('');
       setLocalError(result.error || 'Invalid credentials.');
+      setTimeout(() => {
+        passwordInputRef.current?.focus();
+      }, 0);
     }
   };
 
@@ -123,7 +131,7 @@ export const HomePage: React.FC = () => {
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col w-full max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10 gap-8">
         {/* Dev Mock Testing Indicator (Only visible if DEV and VITE_USE_MOCK === "true") */}
-        {!isFirebaseActive && isMockEnabled && (
+        {!isFirebaseActive && isMockEnabled && Boolean(import.meta.env.DEV && import.meta.env.VITE_USE_MOCK === 'true') && (
           <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-on-surface">
             <div className="flex items-center gap-2.5">
               <BadgeCheck className="w-5 h-5 text-primary shrink-0" />
@@ -279,7 +287,8 @@ export const HomePage: React.FC = () => {
                       type="text"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
-                      placeholder="e.g. elena.vance"
+                      placeholder="Enter your username"
+                      autoComplete="username"
                       required
                       className="w-full h-12 px-3.5 bg-surface-container-low rounded-xl text-sm text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border border-outline-variant/30 transition-all"
                     />
@@ -302,11 +311,13 @@ export const HomePage: React.FC = () => {
                   </div>
                   <div className="relative flex items-center">
                     <input
+                      ref={passwordInputRef}
                       id="password"
                       type={showPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••••••"
+                      autoComplete="current-password"
                       required
                       className="w-full h-12 pl-3.5 pr-11 bg-surface-container-low rounded-xl text-sm text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border border-outline-variant/30 transition-all"
                     />
@@ -337,37 +348,6 @@ export const HomePage: React.FC = () => {
                   )}
                 </button>
               </form>
-
-              {/* Sample User Quick-fill buttons */}
-              <div className="pt-2 border-t border-outline-variant/20 flex flex-col gap-2">
-                <span className="text-[11px] font-medium text-on-surface-variant text-center">
-                  Quick-fill demo credentials:
-                </span>
-                <div className="grid grid-cols-3 gap-1.5 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => handleQuickFill('elena.vance')}
-                    className="p-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-[11px] font-medium truncate"
-                  >
-                    Elena (Cust.)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickFill('admin')}
-                    className="p-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-[11px] font-medium truncate"
-                  >
-                    Admin
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickFill('sarah.jenkins')}
-                    className="p-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-error text-[11px] font-medium truncate"
-                    title="Test disabled account error"
-                  >
-                    Disabled User
-                  </button>
-                </div>
-              </div>
 
               {/* Enrollment Link */}
               <div className="bg-surface-container-low rounded-xl p-3 text-center">
