@@ -98,22 +98,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [user, logout, resetInactivityTimer]);
 
+  // Safety net: after 12 seconds, if isLoading is still true, call setIsLoading(false)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsLoading((current) => (current ? false : current));
+    }, 12000);
+
+    return () => clearTimeout(timer);
+  }, []);
+
   // Initial Auth listener
   useEffect(() => {
     const activeAuth = auth;
     const activeDb = db;
     if (isFirebaseConfigured() && activeAuth && activeDb) {
+      const withTimeout = <T,>(p: Promise<T>, ms = 8000): Promise<T> =>
+        Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+
       const unsubscribe = onAuthStateChanged(activeAuth, async (fbUser) => {
-        setIsLoading(true);
-        if (fbUser) {
-          setFirebaseUser(fbUser);
-          try {
-            const userDocSnap = await getDoc(doc(activeDb, 'users', fbUser.uid));
+        try {
+          setIsLoading(true);
+          if (fbUser) {
+            setFirebaseUser(fbUser);
+            const userDocSnap = await withTimeout(getDoc(doc(activeDb, 'users', fbUser.uid)));
             if (userDocSnap.exists()) {
               const profile = userDocSnap.data() as UserProfile;
               // Check if account is disabled or closed
               if (profile.status === 'disabled' || profile.status === 'closed') {
-                await firebaseSignOut(activeAuth);
+                try {
+                  await firebaseSignOut(activeAuth);
+                } catch (signoutErr) {
+                  console.warn('Firebase signout error:', signoutErr);
+                }
                 setUser(null);
                 setFirebaseUser(null);
                 setError(`Account ${profile.status}. Please contact Emprise Finance Member Care.`);
@@ -123,16 +139,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } else {
               setUser(null);
             }
-          } catch (err) {
-            console.error('Error fetching user profile:', err);
-            setError('Network error while verifying account status.');
+          } else {
+            setFirebaseUser(null);
             setUser(null);
           }
-        } else {
-          setFirebaseUser(null);
+        } catch (err) {
+          console.error('Error in onAuthStateChanged:', err);
+          setError('Network error while verifying account status.');
           setUser(null);
+          setFirebaseUser(null);
+          try {
+            await firebaseSignOut(activeAuth);
+          } catch (signoutErr) {
+            console.warn('Firebase signout error on auth error:', signoutErr);
+          }
+        } finally {
+          setIsLoading(false);
         }
-        setIsLoading(false);
       });
 
       return () => unsubscribe();

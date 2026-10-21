@@ -177,12 +177,12 @@ export const HomePage: React.FC = () => {
                   EF
                 </div>
                 <div>
-                  <div className="flex items-center gap-1.5 text-primary text-xs font-semibold">
-                    <ShieldCheck className="w-4 h-4 text-primary" />
-                    <span>Digital Banking Platform</span>
+                  <div className="flex items-center gap-1 text-amber-500 text-sm">
+                    <span>★★★★★</span>
+                    <span className="font-bold text-on-surface text-xs ml-1">4.9 / 5.0</span>
                   </div>
                   <span className="text-xs text-on-surface-variant font-medium">
-                    Built for Everyday Convenience
+                    Verified Customer Satisfaction
                   </span>
                 </div>
               </div>
@@ -487,15 +487,15 @@ export const HomePage: React.FC = () => {
           <div className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/20 shadow-xs flex flex-col justify-between gap-4">
             <div>
               <span className="text-xs font-bold uppercase tracking-wider text-primary">Local Impact</span>
-              <h4 className="text-lg font-bold text-on-surface mt-1">Modern Digital Financial Services</h4>
+              <h4 className="text-lg font-bold text-on-surface mt-1">Community Roots, Digital Power</h4>
               <p className="text-xs text-on-surface-variant leading-relaxed mt-2">
-                Manage your accounts, send money securely to other members, and track your transaction history through our streamlined web portal.
+                We reinvest deposits straight into community commerce. Enjoy personalized banking, free financial guidance, and access to thousands of fee-free ATMs nationwide.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-outline-variant/20">
               <div className="bg-surface-container-low p-3 rounded-xl">
-                <span className="text-base font-bold text-on-surface block">24/7</span>
-                <span className="text-[11px] text-on-surface-variant">Online account access</span>
+                <span className="text-base font-bold text-on-surface block">55,000+</span>
+                <span className="text-[11px] text-on-surface-variant">Fee-free ATM network</span>
               </div>
               <div className="bg-surface-container-low p-3 rounded-xl">
                 <span className="text-base font-bold text-primary block">$0 / mo</span>
