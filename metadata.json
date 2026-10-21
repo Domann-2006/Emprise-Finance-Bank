@@ -1,0 +1,6 @@
+{
+  "name": "Emprise Finance",
+  "description": "Full-stack modern banking web application with real-time accounts, transfers, ledger transactions, and admin customer management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
