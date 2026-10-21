@@ -87,13 +87,13 @@ export const HomePage: React.FC = () => {
   return (
     <div className="min-h-screen bg-surface flex flex-col font-sans">
       {/* Top Public Header */}
-      <header className="sticky top-0 z-40 bg-surface-container-lowest/90 backdrop-blur-md border-b border-outline-variant/30">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-          <Link to="/" className="flex items-center">
+      <header className="sticky top-0 z-40 bg-surface-container-lowest/90 backdrop-blur-md border-b border-outline-variant/30 pt-[env(safe-area-inset-top)]">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-4 min-h-[64px] flex items-center justify-between gap-3 sm:gap-4">
+          <Link to="/" className="flex items-center shrink-0">
             <Logo size="md" variant="dark" />
           </Link>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
             <a
               href={`tel:${SUPPORT_PHONE.replace(/-/g, '')}`}
               className="hidden sm:flex items-center gap-1.5 text-xs font-semibold text-secondary hover:text-primary transition-colors"
@@ -104,7 +104,7 @@ export const HomePage: React.FC = () => {
 
             <Link
               to="/signup"
-              className="px-4 py-2 rounded-xl bg-primary-container hover:bg-primary text-on-primary font-semibold text-xs sm:text-sm shadow-sm transition-all active:scale-95 flex items-center gap-1.5"
+              className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary-container hover:bg-primary text-on-primary font-semibold text-xs sm:text-sm shadow-sm transition-all active:scale-95"
             >
               <UserPlus className="w-4 h-4" />
               <span>Open Account</span>
@@ -112,7 +112,7 @@ export const HomePage: React.FC = () => {
 
             <a
               href="#login-card"
-              className="px-3.5 py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-xs sm:text-sm transition-all"
+              className="px-3.5 py-1.5 sm:py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-xs sm:text-sm transition-all shrink-0"
             >
               Sign In
             </a>
@@ -154,7 +154,7 @@ export const HomePage: React.FC = () => {
         {/* Hero & Login Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Left Column: Hero Content */}
-          <section className="lg:col-span-7 flex flex-col space-y-5">
+          <section className="lg:col-span-7 flex flex-col gap-6 sm:gap-8">
             <div className="inline-flex items-center space-x-2 bg-secondary-container/40 self-start px-3 py-1 rounded-full">
               <span className="w-2 h-2 rounded-full bg-primary-container animate-pulse" />
               <span className="text-xs font-semibold text-on-secondary-fixed-variant">
@@ -193,20 +193,20 @@ export const HomePage: React.FC = () => {
             </div>
 
             {/* Quick Action Hero Jump Buttons */}
-            <div className="grid grid-cols-2 gap-3 pt-1">
+            <div className="grid grid-cols-2 gap-3 pt-2 pb-2">
               <Link
                 to="/signup"
-                className="h-12 flex items-center justify-center bg-primary-container hover:bg-primary text-on-primary font-semibold text-sm rounded-xl shadow-sm transition-all active:scale-[0.98] gap-2"
+                className="h-12 flex items-center justify-center bg-primary-container hover:bg-primary text-on-primary font-semibold text-sm rounded-xl shadow-sm transition-all active:scale-[0.98] gap-2 px-3"
               >
                 <UserPlus className="w-4 h-4" />
                 <span>Open Account</span>
               </Link>
               <a
                 href="#login-card"
-                className="h-12 flex items-center justify-center bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-sm rounded-xl shadow-sm transition-all active:scale-[0.98] gap-2"
+                className="h-12 flex items-center justify-center border border-outline-variant/60 bg-surface-container-lowest hover:bg-surface-container text-on-surface font-semibold text-sm rounded-xl shadow-xs transition-all active:scale-[0.98] gap-2 px-3"
               >
                 <LogIn className="w-4 h-4" />
-                <span>Sign In Below</span>
+                <span>Sign In</span>
               </a>
             </div>
 

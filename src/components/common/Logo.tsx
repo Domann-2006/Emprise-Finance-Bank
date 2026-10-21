@@ -5,6 +5,7 @@ interface LogoProps {
   className?: string;
   variant?: 'light' | 'dark' | 'auto';
   showSubtitle?: boolean;
+  hideSubtitleOnMobile?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }
 
@@ -12,6 +13,7 @@ export const Logo: React.FC<LogoProps> = ({
   className = '',
   variant = 'auto',
   showSubtitle = true,
+  hideSubtitleOnMobile = false,
   size = 'md',
 }) => {
   const iconSize = size === 'sm' ? 24 : size === 'lg' ? 36 : 28;
@@ -30,7 +32,7 @@ export const Logo: React.FC<LogoProps> = ({
       : 'text-on-surface-variant';
 
   return (
-    <div className={`flex items-center gap-2.5 ${className}`}>
+    <div className={`flex items-center gap-3 shrink-0 ${className}`}>
       {/* Precision Geometric Financial Monogram Mark */}
       <div
         className="rounded-xl bg-gradient-to-br from-primary-container to-primary flex items-center justify-center text-white shadow-sm shrink-0"
@@ -58,11 +60,15 @@ export const Logo: React.FC<LogoProps> = ({
       </div>
 
       <div className="flex flex-col min-w-0">
-        <span className={`font-bold tracking-tight leading-none ${textSize} ${textColor}`}>
+        <span className={`font-bold tracking-tight leading-tight whitespace-nowrap ${textSize} ${textColor}`}>
           {APP_NAME}
         </span>
         {showSubtitle && (
-          <span className={`text-[10px] font-semibold tracking-wider uppercase mt-1 ${subColor}`}>
+          <span
+            className={`text-[9px] font-semibold tracking-[0.12em] uppercase mt-0.5 whitespace-nowrap leading-none ${subColor} ${
+              hideSubtitleOnMobile ? 'hidden sm:block' : ''
+            }`}
+          >
             Community Banking
           </span>
         )}
