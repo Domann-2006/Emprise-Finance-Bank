@@ -33,6 +33,7 @@ export interface BankAccount {
   balanceCents: number; // Integer cents (e.g. 1485075 = $14,850.75)
   status: UserStatus;
   createdAt: any;
+  lastTransactionId?: string;
 }
 
 export interface AccountDirectoryEntry {

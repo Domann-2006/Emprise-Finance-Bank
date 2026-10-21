@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ProtectedRoute } from './components/guards/ProtectedRoute';
 import { CustomerLayout } from './components/layout/CustomerLayout';
 import { AdminLayout } from './components/layout/AdminLayout';
+import { isFirebaseConfigured, isMockEnabled } from './services/firebase';
+import { FirebaseNotConfiguredScreen } from './components/common/FirebaseNotConfiguredScreen';
 import { SessionTimeoutModal } from './components/common/SessionTimeoutModal';
 
 // Public Pages
@@ -50,6 +52,10 @@ const RootRoute: React.FC = () => {
 };
 
 export default function App() {
+  if (!isFirebaseConfigured() && !isMockEnabled) {
+    return <FirebaseNotConfiguredScreen />;
+  }
+
   return (
     <BrowserRouter>
       <AuthProvider>

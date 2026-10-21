@@ -43,7 +43,7 @@ export const SignUpPage: React.FC = () => {
     city: '',
     state: 'IL',
     zip: '',
-    govId: '999-00-1234', // test value
+    govId: '',
     username: '',
     password: '',
     accountType: 'Checking',

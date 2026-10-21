@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { isFirebaseConfigured, getSecondaryAuth, db } from '../../services/firebase';
+import { isFirebaseConfigured, isMockEnabled, getSecondaryAuth, db } from '../../services/firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp, collection } from 'firebase/firestore';
+import { adminCreateCustomerAccount } from '../../services/banking';
 import { mockStorage } from '../../services/mockStorage';
 import { deriveAuthEmail, ROUTING_NUMBER } from '../../config/brand';
-import { generateAccountNumber, parseUSDToCents, formatCentsToUSD } from '../../utils/format';
-import { UserProfile, BankAccount, AccountDirectoryEntry, TransactionRecord, AccountType } from '../../types';
+import { parseUSDToCents, formatCentsToUSD } from '../../utils/format';
+import { AccountType } from '../../types';
 import {
   UserPlus,
   CheckCircle2,
@@ -95,66 +95,21 @@ export const AdminCreateAccountPage: React.FC = () => {
         // Clean up / sign out from secondary auth immediately
         await cleanup();
 
-        // 2. Write the Firestore documents using the primary admin instance
-        const newAccountNumber = generateAccountNumber();
-        const accountId = `acct_${newUid}`;
-
-        const userDoc: UserProfile = {
+        // 2. Write the Firestore documents using single writeBatch
+        const created = await adminCreateCustomerAccount({
           uid: newUid,
-          name: name.trim(),
+          name,
           username: cleanUsername,
-          email: email.trim(),
+          email,
           dob,
-          phone: '(555) 010-0000',
-          address: { street: '120 Financial Plaza', city: 'Chicago', state: 'IL', zip: '60601' },
-          role: 'customer',
-          status: 'active',
-          createdAt: serverTimestamp(),
-        };
-
-        const accountDoc: BankAccount = {
-          id: accountId,
-          ownerUid: newUid,
-          accountNumber: newAccountNumber,
-          type: accountType,
-          balanceCents: openingCents,
-          status: 'active',
-          createdAt: serverTimestamp(),
-        };
-
-        const directoryDoc: AccountDirectoryEntry = {
-          accountNumber: newAccountNumber,
-          accountId,
-          ownerName: userDoc.name,
-          status: 'active',
-        };
-
-        await setDoc(doc(db, 'users', newUid), userDoc);
-        await setDoc(doc(db, 'accounts', accountId), accountDoc);
-        await setDoc(doc(db, 'accountDirectory', newAccountNumber), directoryDoc);
-
-        // Record opening deposit transaction if opening balance > 0
-        if (openingCents > 0) {
-          const txRef = doc(collection(db, 'transactions'));
-          const txDoc: Omit<TransactionRecord, 'id'> = {
-            accountId,
-            ownerUid: newUid,
-            type: 'credit',
-            amountCents: openingCents,
-            counterpartyName: 'Institutional Opening Deposit',
-            counterpartyAccount: 'LEDGER-START',
-            note: 'Initial account opening funding',
-            balanceAfterCents: openingCents,
-            status: 'cleared',
-            createdAt: serverTimestamp(),
-          };
-          await setDoc(txRef, txDoc);
-        }
+          accountType,
+          openingCents,
+        });
 
         setSuccessResult({
-          accountNumber: newAccountNumber,
+          accountNumber: created.accountNumber,
           username: cleanUsername,
-          name: userDoc.name,
+          name: created.user.name,
           balanceCents: openingCents,
           accountType,
         });
@@ -167,8 +122,8 @@ export const AdminCreateAccountPage: React.FC = () => {
       } finally {
         setIsSubmitting(false);
       }
-    } else {
-      // Mock mode
+    } else if (isMockEnabled) {
+      // Mock mode: only permitted when DEV=true and VITE_USE_MOCK="true"
       try {
         await new Promise((res) => setTimeout(res, 400));
         const { account, user: createdUser } = mockStorage.adminCreateUser({
@@ -192,6 +147,9 @@ export const AdminCreateAccountPage: React.FC = () => {
       } finally {
         setIsSubmitting(false);
       }
+    } else {
+      setError('Firebase is not configured. Live admin account creation requires active Firebase credentials.');
+      setIsSubmitting(false);
     }
   };
 

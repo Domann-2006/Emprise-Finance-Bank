@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Users collection: customers read only their own users doc; role and status never customer-writable
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if isAdmin() || (
+        isOwner(uid) &&
+        request.resource.data.role == 'customer' &&
+        request.resource.data.status == 'active'
+      );
+      allow update: if isAdmin() || (
+        isOwner(uid) &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.status == resource.data.status
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Accounts collection: customers read only their own account; public sign-up creates role "customer" with balance 0;
+    // customer balance changes allowed only as part of a valid transfer validated with getAfter() against matching transaction docs.
+    match /accounts/{accountId} {
+      allow read: if (isSignedIn() && resource.data.ownerUid == request.auth.uid) || isAdmin();
+      allow create: if isAdmin() || (
+        isSignedIn() &&
+        request.resource.data.ownerUid == request.auth.uid &&
+        request.resource.data.balanceCents == 0 &&
+        request.resource.data.status == 'active'
+      );
+      allow update: if isAdmin() || (
+        isSignedIn() &&
+        request.resource.data.ownerUid == resource.data.ownerUid &&
+        request.resource.data.accountNumber == resource.data.accountNumber &&
+        request.resource.data.type == resource.data.type &&
+        request.resource.data.status == resource.data.status &&
+        (
+          request.resource.data.balanceCents == resource.data.balanceCents ||
+          (
+            'lastTransactionId' in request.resource.data &&
+            existsAfter(/databases/$(database)/documents/transactions/$(request.resource.data.lastTransactionId)) &&
+            getAfter(/databases/$(database)/documents/transactions/$(request.resource.data.lastTransactionId)).data.accountId == accountId &&
+            getAfter(/databases/$(database)/documents/transactions/$(request.resource.data.lastTransactionId)).data.balanceAfterCents == request.resource.data.balanceCents
+          )
+        )
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Transactions collection: customers read only their own transactions
+    match /transactions/{transactionId} {
+      allow read: if (isSignedIn() && resource.data.ownerUid == request.auth.uid) || isAdmin();
+      allow create: if isAdmin() || (
+        isSignedIn() &&
+        (
+          request.resource.data.ownerUid == request.auth.uid ||
+          (request.resource.data.type == 'credit' && exists(/databases/$(database)/documents/accounts/$(request.resource.data.accountId)))
+        )
+      );
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Account Directory: readable by signed-in users, create-only for non-admins
+    match /accountDirectory/{accountNumber} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

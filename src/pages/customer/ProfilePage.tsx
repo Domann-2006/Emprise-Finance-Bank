@@ -5,7 +5,7 @@ import { BankAccount } from '../../types';
 import { formatDateTime, maskAccountNumber } from '../../utils/format';
 import { UserStatusBadge } from '../../components/common/StatusBadge';
 import { APP_NAME, deriveAuthEmail, ROUTING_NUMBER } from '../../config/brand';
-import { isFirebaseConfigured, auth } from '../../services/firebase';
+import { isFirebaseConfigured, isMockEnabled, auth } from '../../services/firebase';
 import {
   EmailAuthProvider,
   reauthenticateWithCredential,
@@ -90,8 +90,8 @@ export const ProfilePage: React.FC = () => {
       } finally {
         setIsUpdatingPassword(false);
       }
-    } else {
-      // Mock mode: simulate re-authentication
+    } else if (isMockEnabled) {
+      // Mock mode: simulate re-authentication strictly in dev mode
       await new Promise((res) => setTimeout(res, 500));
       if (currentPassword !== 'password123' && currentPassword.length < 6) {
         setPasswordError('Current password verification failed.');
@@ -102,6 +102,9 @@ export const ProfilePage: React.FC = () => {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      setIsUpdatingPassword(false);
+    } else {
+      setPasswordError('Firebase is not configured. Live authentication is required.');
       setIsUpdatingPassword(false);
     }
   };

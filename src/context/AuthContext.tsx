@@ -13,7 +13,7 @@ import {
   User as FirebaseUser,
 } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { auth, db, isFirebaseConfigured, getSecondaryAuth } from '../services/firebase';
+import { auth, db, isFirebaseConfigured, isMockEnabled, getSecondaryAuth } from '../services/firebase';
 import { deriveAuthEmail, extractUsername, AUTH_EMAIL_DOMAIN } from '../config/brand';
 import { UserProfile, UserRole, UserStatus, SignUpFormData } from '../types';
 import { mockStorage } from '../services/mockStorage';
@@ -136,8 +136,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       return () => unsubscribe();
-    } else {
-      // Preview/Mock mode: check localStorage for active session
+    } else if (isMockEnabled) {
+      // Preview/Mock mode: check localStorage for active session only if mock is enabled
       const storedUid = localStorage.getItem('emprise_mock_active_uid');
       if (storedUid) {
         const mockUser = mockStorage.getUserByUid(storedUid);
@@ -147,6 +147,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           localStorage.removeItem('emprise_mock_active_uid');
         }
       }
+      setIsLoading(false);
+    } else {
       setIsLoading(false);
     }
   }, []);
@@ -209,8 +211,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setError(errorMsg);
         return { success: false, role: 'customer', error: errorMsg };
       }
-    } else {
-      // Mock mode validation
+    } else if (isMockEnabled) {
+      // Mock mode validation: permitted strictly when DEV=true and VITE_USE_MOCK="true"
       await new Promise((res) => setTimeout(res, 400)); // simulated latency
       const mockUser = mockStorage.getUserByUsername(cleanUsername);
 
@@ -242,6 +244,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       lastActivityRef.current = Date.now();
       setIsLoading(false);
       return { success: true, role: mockUser.role };
+    } else {
+      setIsLoading(false);
+      const err = 'Firebase is not configured. Live Firebase Authentication is required to log in.';
+      setError(err);
+      return { success: false, role: 'customer', error: err };
     }
   };
 
@@ -260,11 +267,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Create user in Firebase Auth
         const cred = await createUserWithEmailAndPassword(auth, derivedEmail, formData.password);
         
-        // Write Firestore records: users, accounts, accountDirectory
+        // Write Firestore records: users, accounts, accountDirectory, opening transaction in single writeBatch
         const { account } = await createNewCustomerAccount(cred.user.uid, formData);
 
-        // Sign out right after signup so user logs in cleanly through the public login card,
-        // or let them see their success account number
+        // Sign out right after signup so user logs in cleanly through the public login card
         await firebaseSignOut(auth);
 
         setIsLoading(false);
@@ -280,8 +286,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setError(errorMsg);
         return { success: false, accountNumber: '', error: errorMsg };
       }
-    } else {
-      // Mock mode
+    } else if (isMockEnabled) {
+      // Mock mode: permitted strictly when DEV=true and VITE_USE_MOCK="true"
       await new Promise((res) => setTimeout(res, 500));
       try {
         const { account } = mockStorage.createUser(formData);
@@ -293,6 +299,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setError(errorMsg);
         return { success: false, accountNumber: '', error: errorMsg };
       }
+    } else {
+      setIsLoading(false);
+      const errorMsg = 'Firebase is not configured. Enrollment requires active Firebase credentials.';
+      setError(errorMsg);
+      return { success: false, accountNumber: '', error: errorMsg };
     }
   };
 

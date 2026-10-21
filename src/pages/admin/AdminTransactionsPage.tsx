@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { mockStorage } from '../../services/mockStorage';
-import { isFirebaseConfigured, db } from '../../services/firebase';
+import { isFirebaseConfigured, isMockEnabled, db } from '../../services/firebase';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import { TransactionRecord } from '../../types';
 import { formatCentsToUSD, formatDateTime } from '../../utils/format';
@@ -27,10 +27,7 @@ export const AdminTransactionsPage: React.FC = () => {
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
-      if (!isFirebaseConfigured() || !db) {
-        setTransactions(mockStorage.getAllTransactions());
-        setIsLoading(false);
-      } else {
+      if (isFirebaseConfigured() && db) {
         try {
           const q = query(collection(db, 'transactions'), orderBy('createdAt', 'desc'));
           const snap = await getDocs(q);
@@ -41,6 +38,11 @@ export const AdminTransactionsPage: React.FC = () => {
         } finally {
           setIsLoading(false);
         }
+      } else if (isMockEnabled) {
+        setTransactions(mockStorage.getAllTransactions());
+        setIsLoading(false);
+      } else {
+        setIsLoading(false);
       }
     };
 

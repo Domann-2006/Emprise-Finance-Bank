@@ -12,6 +12,10 @@ export const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
 };
 
+export const isMockEnabled: boolean = Boolean(
+  import.meta.env.DEV && import.meta.env.VITE_USE_MOCK === 'true'
+);
+
 export function isFirebaseConfigured(): boolean {
   return Boolean(
     firebaseConfig.apiKey &&

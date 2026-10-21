@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { mockStorage } from '../../services/mockStorage';
-import { isFirebaseConfigured, db } from '../../services/firebase';
+import { isFirebaseConfigured, isMockEnabled, db } from '../../services/firebase';
 import { collection, getDocs, doc, setDoc, query, where } from 'firebase/firestore';
 import { UserProfile, BankAccount } from '../../types';
 import { formatCentsToUSD, maskAccountNumber, parseUSDToCents } from '../../utils/format';
@@ -57,16 +57,7 @@ export const AdminCustomersPage: React.FC = () => {
 
   const loadData = async () => {
     setIsLoading(true);
-    if (!isFirebaseConfigured() || !db) {
-      setUsers(mockStorage.getUsers().filter((u) => u.role === 'customer'));
-      setAccounts(
-        mockStorage
-          .getUsers()
-          .map((u) => mockStorage.getAccountByOwner(u.uid))
-          .filter(Boolean) as BankAccount[]
-      );
-      setIsLoading(false);
-    } else {
+    if (isFirebaseConfigured() && db) {
       try {
         const userSnap = await getDocs(collection(db, 'users'));
         const userList = userSnap.docs.map((d) => ({ uid: d.id, ...d.data() })) as UserProfile[];
@@ -80,6 +71,17 @@ export const AdminCustomersPage: React.FC = () => {
       } finally {
         setIsLoading(false);
       }
+    } else if (isMockEnabled) {
+      setUsers(mockStorage.getUsers().filter((u) => u.role === 'customer'));
+      setAccounts(
+        mockStorage
+          .getUsers()
+          .map((u) => mockStorage.getAccountByOwner(u.uid))
+          .filter(Boolean) as BankAccount[]
+      );
+      setIsLoading(false);
+    } else {
+      setIsLoading(false);
     }
   };
 

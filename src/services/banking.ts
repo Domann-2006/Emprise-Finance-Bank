@@ -13,10 +13,12 @@ import {
   where,
   orderBy,
   runTransaction,
+  writeBatch,
   serverTimestamp,
   onSnapshot,
+  Firestore,
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured } from './firebase';
+import { db, isFirebaseConfigured, isMockEnabled } from './firebase';
 import { mockStorage } from './mockStorage';
 import {
   BankAccount,
@@ -24,11 +26,42 @@ import {
   TransactionRecord,
   UserProfile,
   SignUpFormData,
+  AccountType,
 } from '../types';
 import { generateAccountNumber } from '../utils/format';
 
 /**
- * Creates user, account and directory records in Firestore after registration
+ * Generates a verified unique 10-digit account number by checking accountDirectory first
+ */
+export async function getUniqueAccountNumber(activeDb: Firestore): Promise<string> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const candidate = generateAccountNumber();
+    const dirDocRef = doc(activeDb, 'accountDirectory', candidate);
+    const snap = await getDoc(dirDocRef);
+    if (!snap.exists()) {
+      return candidate;
+    }
+  }
+  // High-entropy fallback if collisions occur
+  return `48${Date.now().toString().slice(-8)}`;
+}
+
+/**
+ * Fallback unique account number check for dev mock storage
+ */
+export function getUniqueAccountNumberMock(): string {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const candidate = generateAccountNumber();
+    if (!mockStorage.lookupDirectory(candidate)) {
+      return candidate;
+    }
+  }
+  return `48${Date.now().toString().slice(-8)}`;
+}
+
+/**
+ * Creates user, account, directory records, and opening transaction in Firestore after registration
+ * using a SINGLE writeBatch.
  */
 export async function createNewCustomerAccount(
   uid: string,
@@ -36,11 +69,15 @@ export async function createNewCustomerAccount(
 ): Promise<{ user: UserProfile; account: BankAccount }> {
   const activeDb = db;
   if (!isFirebaseConfigured() || !activeDb) {
-    return mockStorage.createUser(formData);
+    if (isMockEnabled) {
+      return mockStorage.createUser(formData);
+    }
+    throw new Error('Firebase is not configured. Live registration is disabled.');
   }
 
   const cleanUsername = formData.username.trim().toLowerCase();
-  const accountNumber = generateAccountNumber();
+  // 1. Ensure unique account number by checking accountDirectory first
+  const accountNumber = await getUniqueAccountNumber(activeDb);
   const accountId = `acct_${uid}`;
 
   const userDoc: UserProfile = {
@@ -62,6 +99,7 @@ export async function createNewCustomerAccount(
     createdAt: serverTimestamp(),
   };
 
+  const txRef = doc(collection(activeDb, 'transactions'));
   const accountDoc: BankAccount = {
     id: accountId,
     ownerUid: uid,
@@ -70,6 +108,7 @@ export async function createNewCustomerAccount(
     balanceCents: 0,
     status: 'active',
     createdAt: serverTimestamp(),
+    lastTransactionId: txRef.id,
   };
 
   const directoryDoc: AccountDirectoryEntry = {
@@ -79,12 +118,121 @@ export async function createNewCustomerAccount(
     status: 'active',
   };
 
-  // Write users/{uid}, accounts/{accountId}, accountDirectory/{accountNumber}
-  await setDoc(doc(activeDb, 'users', uid), userDoc);
-  await setDoc(doc(activeDb, 'accounts', accountId), accountDoc);
-  await setDoc(doc(activeDb, 'accountDirectory', accountNumber), directoryDoc);
+  const openingTxDoc: Omit<TransactionRecord, 'id'> = {
+    accountId,
+    ownerUid: uid,
+    type: 'credit',
+    amountCents: 0,
+    counterpartyName: 'Institutional Ledger Enrollment',
+    counterpartyAccount: 'ACCOUNT-OPEN',
+    note: 'Account opened with zero balance',
+    balanceAfterCents: 0,
+    status: 'cleared',
+    createdAt: serverTimestamp(),
+  };
+
+  // 2. Write users/{uid}, accounts/{accountId}, accountDirectory/{accountNumber},
+  // and opening transaction with a single writeBatch
+  const batch = writeBatch(activeDb);
+  batch.set(doc(activeDb, 'users', uid), userDoc);
+  batch.set(doc(activeDb, 'accounts', accountId), accountDoc);
+  batch.set(doc(activeDb, 'accountDirectory', accountNumber), directoryDoc);
+  batch.set(txRef, openingTxDoc);
+  await batch.commit();
 
   return { user: userDoc, account: accountDoc };
+}
+
+/**
+ * Admin: Create a customer account, directory entry, and opening transaction using a SINGLE writeBatch
+ */
+export async function adminCreateCustomerAccount(params: {
+  uid: string;
+  name: string;
+  username: string;
+  email: string;
+  dob: string;
+  accountType: AccountType;
+  openingCents: number;
+}): Promise<{ user: UserProfile; account: BankAccount; accountNumber: string }> {
+  const activeDb = db;
+  if (!isFirebaseConfigured() || !activeDb) {
+    if (isMockEnabled) {
+      const res = mockStorage.adminCreateUser({
+        name: params.name,
+        username: params.username,
+        email: params.email,
+        dob: params.dob,
+        accountType: params.accountType,
+        openingBalanceCents: params.openingCents,
+      });
+      return { user: res.user, account: res.account, accountNumber: res.account.accountNumber };
+    }
+    throw new Error('Firebase is not configured. Live admin creation is disabled.');
+  }
+
+  const { uid, name, username, email, dob, accountType, openingCents } = params;
+  const cleanUsername = username.trim().toLowerCase();
+
+  // 1. Ensure unique account number by checking directory first
+  const accountNumber = await getUniqueAccountNumber(activeDb);
+  const accountId = `acct_${uid}`;
+
+  const txRef = doc(collection(activeDb, 'transactions'));
+
+  const userDoc: UserProfile = {
+    uid,
+    name: name.trim(),
+    username: cleanUsername,
+    email: email.trim(),
+    dob,
+    phone: '(555) 010-0000',
+    address: { street: '120 Financial Plaza', city: 'Chicago', state: 'IL', zip: '60601' },
+    role: 'customer',
+    status: 'active',
+    createdAt: serverTimestamp(),
+  };
+
+  const accountDoc: BankAccount = {
+    id: accountId,
+    ownerUid: uid,
+    accountNumber,
+    type: accountType,
+    balanceCents: openingCents,
+    status: 'active',
+    createdAt: serverTimestamp(),
+    lastTransactionId: txRef.id,
+  };
+
+  const directoryDoc: AccountDirectoryEntry = {
+    accountNumber,
+    accountId,
+    ownerName: userDoc.name,
+    status: 'active',
+  };
+
+  const openingTxDoc: Omit<TransactionRecord, 'id'> = {
+    accountId,
+    ownerUid: uid,
+    type: 'credit',
+    amountCents: openingCents,
+    counterpartyName: 'Institutional Opening Deposit',
+    counterpartyAccount: 'LEDGER-START',
+    note: openingCents > 0 ? 'Initial account opening funding' : 'Account opened',
+    balanceAfterCents: openingCents,
+    status: 'cleared',
+    createdAt: serverTimestamp(),
+  };
+
+  // 2. Commit all 4 documents in a SINGLE writeBatch
+  const batch = writeBatch(activeDb);
+  batch.set(doc(activeDb, 'users', uid), userDoc);
+  batch.set(doc(activeDb, 'accounts', accountId), accountDoc);
+  batch.set(doc(activeDb, 'accountDirectory', accountNumber), directoryDoc);
+  batch.set(txRef, openingTxDoc);
+  await batch.commit();
+
+  return { user: userDoc, account: accountDoc, accountNumber };
 }
 
 /**
@@ -98,7 +246,7 @@ export async function lookupAccountDirectory(
 
   const activeDb = db;
   if (!isFirebaseConfigured() || !activeDb) {
-    return mockStorage.lookupDirectory(clean);
+    return isMockEnabled ? mockStorage.lookupDirectory(clean) : null;
   }
 
   try {
@@ -117,13 +265,13 @@ export async function lookupAccountDirectory(
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const activeDb = db;
   if (!isFirebaseConfigured() || !activeDb) {
-    return mockStorage.getUserByUid(uid);
+    return isMockEnabled ? mockStorage.getUserByUid(uid) : null;
   }
 
   try {
-    const snap = await getDoc(doc(activeDb, 'users', uid));
-    if (!snap.exists()) return null;
-    return snap.data() as UserProfile;
+    const uDoc = await getDoc(doc(activeDb, 'users', uid));
+    if (!uDoc.exists()) return null;
+    return uDoc.data() as UserProfile;
   } catch (err) {
     console.error('Error fetching user profile:', err);
     return null;
@@ -131,68 +279,84 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
 }
 
 /**
- * Fetches customer account by owner UID
+ * Fetches bank account by owner UID
  */
-export async function getCustomerAccount(uid: string): Promise<BankAccount | null> {
+export async function getAccountByOwner(uid: string): Promise<BankAccount | null> {
   const activeDb = db;
   if (!isFirebaseConfigured() || !activeDb) {
-    return mockStorage.getAccountByOwner(uid);
+    return isMockEnabled ? mockStorage.getAccountByOwner(uid) : null;
   }
 
   try {
     const q = query(collection(activeDb, 'accounts'), where('ownerUid', '==', uid));
     const snap = await getDocs(q);
     if (snap.empty) return null;
-    const docData = snap.docs[0];
-    return { id: docData.id, ...docData.data() } as BankAccount;
+    const first = snap.docs[0];
+    return { id: first.id, ...first.data() } as BankAccount;
   } catch (err) {
-    console.error('Error fetching customer account:', err);
+    console.error('Error fetching account:', err);
     return null;
   }
 }
 
 /**
- * Subscribes to live account changes (balance, status)
+ * Real-time listener for customer bank account
  */
-export function subscribeToAccount(
+export function listenToAccount(
   accountId: string,
-  onUpdate: (account: BankAccount) => void
+  onUpdate: (account: BankAccount | null) => void
 ): () => void {
   const activeDb = db;
   if (!isFirebaseConfigured() || !activeDb) {
-    const poll = () => {
+    if (isMockEnabled) {
       const acct = mockStorage.getAccountById(accountId);
-      if (acct) onUpdate(acct);
-    };
-    poll();
-    window.addEventListener('emprise_storage_updated', poll);
-    return () => window.removeEventListener('emprise_storage_updated', poll);
+      onUpdate(acct);
+      const handler = () => {
+        onUpdate(mockStorage.getAccountById(accountId));
+      };
+      window.addEventListener('emprise_storage_updated', handler);
+      return () => window.removeEventListener('emprise_storage_updated', handler);
+    }
+    onUpdate(null);
+    return () => {};
   }
 
-  const unsubscribe = onSnapshot(doc(activeDb, 'accounts', accountId), (snap) => {
-    if (snap.exists()) {
-      onUpdate({ id: snap.id, ...snap.data() } as BankAccount);
+  const unsubscribe = onSnapshot(
+    doc(activeDb, 'accounts', accountId),
+    (snap) => {
+      if (snap.exists()) {
+        onUpdate({ id: snap.id, ...snap.data() } as BankAccount);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (err) => {
+      console.error('Account listener error:', err);
     }
-  });
+  );
 
   return unsubscribe;
 }
 
 /**
- * Subscribes to live transactions for an account
+ * Real-time listener for account transactions ledger
  */
-export function subscribeToTransactions(
+export function listenToTransactions(
   accountId: string,
   onUpdate: (transactions: TransactionRecord[]) => void
 ): () => void {
   const activeDb = db;
   if (!isFirebaseConfigured() || !activeDb) {
-    const update = () => {
+    if (isMockEnabled) {
       onUpdate(mockStorage.getTransactionsForAccount(accountId));
-    };
-    update();
-    window.addEventListener('emprise_storage_updated', update);
-    return () => window.removeEventListener('emprise_storage_updated', update);
+      const handler = () => {
+        onUpdate(mockStorage.getTransactionsForAccount(accountId));
+      };
+      window.addEventListener('emprise_storage_updated', handler);
+      return () => window.removeEventListener('emprise_storage_updated', handler);
+    }
+    onUpdate([]);
+    return () => {};
   }
 
   const q = query(
@@ -219,7 +383,9 @@ export function subscribeToTransactions(
 }
 
 /**
- * Executes an atomic transfer using Firestore runTransaction
+ * Executes an atomic transfer using Firestore runTransaction.
+ * All document reads (dirSnap, senderSnap, recipientSnap, senderUserSnap)
+ * execute strictly before any updates or sets.
  */
 export async function executeTransferTransaction(params: {
   senderAccountId: string;
@@ -232,14 +398,20 @@ export async function executeTransferTransaction(params: {
 
   const activeDb = db;
   if (!isFirebaseConfigured() || !activeDb) {
-    const result = mockStorage.executeTransfer(params);
-    window.dispatchEvent(new Event('emprise_storage_updated'));
-    return result;
+    if (isMockEnabled) {
+      const result = mockStorage.executeTransfer(params);
+      window.dispatchEvent(new Event('emprise_storage_updated'));
+      return result;
+    }
+    throw new Error('Firebase is not configured. Transfers require an active connection.');
   }
 
   const cleanRecipientAcct = recipientAccountNumber.trim();
 
   return await runTransaction(activeDb, async (transaction) => {
+    // -------------------------------------------------------------
+    // PHASE 1: ALL READS (Must execute before any update/set)
+    // -------------------------------------------------------------
     // 1. Read recipient directory entry
     const dirRef = doc(activeDb, 'accountDirectory', cleanRecipientAcct);
     const dirSnap = await transaction.get(dirRef);
@@ -290,22 +462,19 @@ export async function executeTransferTransaction(params: {
       throw new Error('Recipient account is currently not active.');
     }
 
-    // 4. Calculate new balances
-    const senderNewBalanceCents = senderData.balanceCents - amountCents;
-    const recipientNewBalanceCents = recipientData.balanceCents + amountCents;
-
-    // 5. Update balances
-    transaction.update(senderRef, { balanceCents: senderNewBalanceCents });
-    transaction.update(recipientRef, { balanceCents: recipientNewBalanceCents });
-
-    // Read sender profile for counterparty name
+    // 4. Read sender user doc (BEFORE any writes!) to resolve counterparty name
     const senderUserRef = doc(activeDb, 'users', senderUid);
     const senderUserSnap = await transaction.get(senderUserRef);
     const senderName = senderUserSnap.exists()
       ? (senderUserSnap.data() as UserProfile).name
       : 'Emprise Member';
 
-    // 6. Write two transaction documents
+    // -------------------------------------------------------------
+    // PHASE 2: CALCULATIONS & REFERENCES
+    // -------------------------------------------------------------
+    const senderNewBalanceCents = senderData.balanceCents - amountCents;
+    const recipientNewBalanceCents = recipientData.balanceCents + amountCents;
+
     const senderTxRef = doc(collection(activeDb, 'transactions'));
     const recipientTxRef = doc(collection(activeDb, 'transactions'));
 
@@ -335,6 +504,20 @@ export async function executeTransferTransaction(params: {
       createdAt: serverTimestamp(),
     };
 
+    // -------------------------------------------------------------
+    // PHASE 3: ALL WRITES
+    // -------------------------------------------------------------
+    // Update balances and link to transaction ID for security rule verification
+    transaction.update(senderRef, {
+      balanceCents: senderNewBalanceCents,
+      lastTransactionId: senderTxRef.id,
+    });
+    transaction.update(recipientRef, {
+      balanceCents: recipientNewBalanceCents,
+      lastTransactionId: recipientTxRef.id,
+    });
+
+    // Write the two transaction documents
     transaction.set(senderTxRef, senderTx);
     transaction.set(recipientTxRef, recipientTx);
 
@@ -354,9 +537,12 @@ export async function updateCustomerStatus(
 ): Promise<void> {
   const activeDb = db;
   if (!isFirebaseConfigured() || !activeDb) {
-    mockStorage.setUserStatus(uid, newStatus);
-    window.dispatchEvent(new Event('emprise_storage_updated'));
-    return;
+    if (isMockEnabled) {
+      mockStorage.setUserStatus(uid, newStatus);
+      window.dispatchEvent(new Event('emprise_storage_updated'));
+      return;
+    }
+    throw new Error('Firebase is not configured.');
   }
 
   // Find account
@@ -384,9 +570,12 @@ export async function editCustomerBalance(
 ): Promise<{ newBalanceCents: number }> {
   const activeDb = db;
   if (!isFirebaseConfigured() || !activeDb) {
-    const res = mockStorage.adjustBalance(accountId, amountCents, direction, note);
-    window.dispatchEvent(new Event('emprise_storage_updated'));
-    return res;
+    if (isMockEnabled) {
+      const res = mockStorage.adjustBalance(accountId, amountCents, direction, note);
+      window.dispatchEvent(new Event('emprise_storage_updated'));
+      return res;
+    }
+    throw new Error('Firebase is not configured.');
   }
 
   return await runTransaction(activeDb, async (transaction) => {
@@ -404,8 +593,6 @@ export async function editCustomerBalance(
       throw new Error('Deduction would result in a negative balance.');
     }
 
-    transaction.update(acctRef, { balanceCents: newBalanceCents });
-
     const txRef = doc(collection(activeDb, 'transactions'));
     const txDoc: Omit<TransactionRecord, 'id'> = {
       accountId: acct.id,
@@ -420,7 +607,17 @@ export async function editCustomerBalance(
       createdAt: serverTimestamp(),
     };
 
+    transaction.update(acctRef, {
+      balanceCents: newBalanceCents,
+      lastTransactionId: txRef.id,
+    });
     transaction.set(txRef, txDoc);
     return { newBalanceCents };
   });
 }
+
+// Aliases for page compatibility
+export const getCustomerAccount = getAccountByOwner;
+export const subscribeToAccount = listenToAccount;
+export const subscribeToTransactions = listenToTransactions;
+

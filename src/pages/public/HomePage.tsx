@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Logo } from '../../components/common/Logo';
 import { ForgotPasswordModal } from '../../components/common/ForgotPasswordModal';
+import { isMockEnabled } from '../../services/firebase';
 import {
   APP_NAME,
   SUPPORT_PHONE,
@@ -121,8 +122,8 @@ export const HomePage: React.FC = () => {
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col w-full max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10 gap-8">
-        {/* Firebase Environment Status Indicator */}
-        {!isFirebaseActive && (
+        {/* Dev Mock Testing Indicator (Only visible if DEV and VITE_USE_MOCK === "true") */}
+        {!isFirebaseActive && isMockEnabled && (
           <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-on-surface">
             <div className="flex items-center gap-2.5">
               <BadgeCheck className="w-5 h-5 text-primary shrink-0" />
@@ -176,12 +177,12 @@ export const HomePage: React.FC = () => {
                   EF
                 </div>
                 <div>
-                  <div className="flex items-center gap-1 text-amber-500 text-sm">
-                    <span>★★★★★</span>
-                    <span className="font-bold text-on-surface text-xs ml-1">4.9 / 5.0</span>
+                  <div className="flex items-center gap-1.5 text-primary text-xs font-semibold">
+                    <ShieldCheck className="w-4 h-4 text-primary" />
+                    <span>Digital Banking Platform</span>
                   </div>
                   <span className="text-xs text-on-surface-variant font-medium">
-                    Verified Customer Satisfaction
+                    Built for Everyday Convenience
                   </span>
                 </div>
               </div>
@@ -486,19 +487,19 @@ export const HomePage: React.FC = () => {
           <div className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/20 shadow-xs flex flex-col justify-between gap-4">
             <div>
               <span className="text-xs font-bold uppercase tracking-wider text-primary">Local Impact</span>
-              <h4 className="text-lg font-bold text-on-surface mt-1">Community Roots, Digital Power</h4>
+              <h4 className="text-lg font-bold text-on-surface mt-1">Modern Digital Financial Services</h4>
               <p className="text-xs text-on-surface-variant leading-relaxed mt-2">
-                We reinvest deposits straight into community commerce. Enjoy personalized banking, free financial guidance, and access to thousands of fee-free ATMs nationwide.
+                Manage your accounts, send money securely to other members, and track your transaction history through our streamlined web portal.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-2 pt-2 border-t border-outline-variant/20">
               <div className="bg-surface-container-low p-3 rounded-xl">
-                <span className="text-base font-bold text-on-surface block">55,000+</span>
-                <span className="text-[11px] text-on-surface-variant">Fee-free ATM network</span>
+                <span className="text-base font-bold text-on-surface block">24/7</span>
+                <span className="text-[11px] text-on-surface-variant">Online account access</span>
               </div>
               <div className="bg-surface-container-low p-3 rounded-xl">
                 <span className="text-base font-bold text-primary block">$0 / mo</span>
-                <span className="text-[11px] text-on-surface-variant">Community checking</span>
+                <span className="text-[11px] text-on-surface-variant">Standard checking</span>
               </div>
             </div>
           </div>
