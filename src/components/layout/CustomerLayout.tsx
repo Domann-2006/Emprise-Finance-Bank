@@ -23,6 +23,36 @@ export const CustomerLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const [isAvatarMenuOpen, setIsAvatarMenuOpen] = React.useState(false);
+  const avatarMenuRef = React.useRef<HTMLDivElement>(null);
+
+  // Close avatar dropdown on outside click or Escape key
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (avatarMenuRef.current && !avatarMenuRef.current.contains(event.target as Node)) {
+        setIsAvatarMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsAvatarMenuOpen(false);
+      }
+    };
+
+    if (isAvatarMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isAvatarMenuOpen]);
+
+  // Close dropdown on navigation
+  React.useEffect(() => {
+    setIsAvatarMenuOpen(false);
+  }, [location.pathname]);
 
   const handleSignOut = async () => {
     await logout();
@@ -141,13 +171,56 @@ export const CustomerLayout: React.FC = () => {
             >
               <HelpCircle className="w-5 h-5" />
             </button>
-            <button
-              onClick={() => navigate('/profile')}
-              aria-label="Profile"
-              className="w-8 h-8 rounded-full bg-primary-container/30 text-on-primary flex items-center justify-center text-xs font-bold"
-            >
-              {user?.name?.[0] || 'U'}
-            </button>
+            {/* Mobile Avatar Menu Dropdown */}
+            <div ref={avatarMenuRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setIsAvatarMenuOpen((prev) => !prev)}
+                aria-label="Account menu"
+                aria-expanded={isAvatarMenuOpen}
+                aria-haspopup="true"
+                className="w-8 h-8 rounded-full bg-primary-container/30 hover:bg-primary-container/50 text-on-primary flex items-center justify-center text-xs font-bold transition-all focus:outline-none focus:ring-2 focus:ring-secondary-fixed ring-offset-1 ring-offset-on-secondary-fixed"
+              >
+                {user?.name?.[0] || 'U'}
+              </button>
+
+              {isAvatarMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-surface-container-lowest text-on-surface shadow-xl border border-outline-variant/30 py-2 z-50 animate-fade-in"
+                >
+                  {/* User info */}
+                  <div className="px-4 py-2.5 border-b border-outline-variant/20">
+                    <p className="text-xs font-bold text-on-surface truncate">{user?.name || 'Member'}</p>
+                    <p className="text-[11px] font-mono text-primary truncate">@{user?.username || 'user'}</p>
+                  </div>
+
+                  {/* Options */}
+                  <div className="py-1">
+                    <NavLink
+                      to="/profile"
+                      onClick={() => setIsAvatarMenuOpen(false)}
+                      className="w-full px-4 py-2.5 text-left text-xs font-medium text-on-surface hover:bg-surface-container flex items-center gap-2.5 transition-colors"
+                    >
+                      <User className="w-4 h-4 text-on-surface-variant shrink-0" />
+                      <span>Profile</span>
+                    </NavLink>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setIsAvatarMenuOpen(false);
+                        await handleSignOut();
+                      }}
+                      className="w-full px-4 py-2.5 text-left text-xs font-semibold text-error hover:bg-error-container/20 flex items-center gap-2.5 transition-colors"
+                    >
+                      <LogOut className="w-4 h-4 text-error shrink-0" />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>

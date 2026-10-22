@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getCustomerAccount } from '../../services/banking';
 import { BankAccount } from '../../types';
@@ -24,11 +25,43 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
+  Pencil,
+  Lock,
+  LogOut,
 } from 'lucide-react';
 
 export const ProfilePage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, updateProfile, logout } = useAuth();
+  const navigate = useNavigate();
   const [account, setAccount] = useState<BankAccount | null>(null);
+
+  // Profile Edit State
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  // Form Fields State
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [street, setStreet] = useState('');
+  const [apt, setApt] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [zip, setZip] = useState('');
+
+  // Field validation errors
+  const [fieldErrors, setFieldErrors] = useState<{
+    email?: string;
+    phone?: string;
+    street?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+  }>({});
+
+  // Sign out confirmation state
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   // Change password state
   const [currentPassword, setCurrentPassword] = useState('');
@@ -39,6 +72,24 @@ export const ProfilePage: React.FC = () => {
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
+  const resetProfileFields = () => {
+    setEmail(user?.email || '');
+    setPhone(user?.phone || '');
+    setStreet(user?.address?.street || '');
+    setApt(user?.address?.apt || '');
+    setCity(user?.address?.city || '');
+    setState(user?.address?.state || '');
+    setZip(user?.address?.zip || '');
+    setFieldErrors({});
+    setProfileError(null);
+  };
+
+  useEffect(() => {
+    if (user) {
+      resetProfileFields();
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!user) return;
     const load = async () => {
@@ -47,6 +98,91 @@ export const ProfilePage: React.FC = () => {
     };
     load();
   }, [user]);
+
+  const handleSaveProfile = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setProfileError(null);
+    setProfileSuccess(null);
+
+    const errs: typeof fieldErrors = {};
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const cleanEmail = email.trim();
+    const cleanPhone = phone.trim();
+    const cleanStreet = street.trim();
+    const cleanCity = city.trim();
+    const cleanState = state.trim().toUpperCase();
+    const cleanZip = zip.trim();
+
+    if (!cleanEmail) {
+      errs.email = 'Email address is required.';
+    } else if (!emailRegex.test(cleanEmail)) {
+      errs.email = 'Please enter a valid email address.';
+    }
+
+    const digits = cleanPhone.replace(/\D/g, '');
+    if (!cleanPhone) {
+      errs.phone = 'Mobile phone is required.';
+    } else if (digits.length < 10) {
+      errs.phone = 'Phone number must contain at least 10 digits.';
+    }
+
+    if (!cleanStreet) {
+      errs.street = 'Street address is required.';
+    }
+
+    if (!cleanCity) {
+      errs.city = 'City is required.';
+    }
+
+    if (!cleanState) {
+      errs.state = 'State is required.';
+    } else if (!/^[A-Za-z]{2}$/.test(cleanState)) {
+      errs.state = 'State must be a 2-letter abbreviation (e.g. IL).';
+    }
+
+    if (!cleanZip) {
+      errs.zip = 'ZIP code is required.';
+    } else if (!/^\d{5}$/.test(cleanZip)) {
+      errs.zip = 'ZIP code must be 5 digits.';
+    }
+
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs);
+      return;
+    }
+
+    setFieldErrors({});
+    setIsSaving(true);
+
+    const res = await updateProfile({
+      email: cleanEmail,
+      phone: cleanPhone,
+      address: {
+        street: cleanStreet,
+        apt: apt.trim(),
+        city: cleanCity,
+        state: cleanState,
+        zip: cleanZip,
+      },
+    });
+
+    setIsSaving(false);
+
+    if (res.success) {
+      setProfileSuccess('Profile updated successfully.');
+      setIsEditing(false);
+      setTimeout(() => {
+        setProfileSuccess(null);
+      }, 4000);
+    } else {
+      setProfileError(res.error || 'Failed to update profile. Please try again.');
+    }
+  };
+
+  const handleSignOut = async () => {
+    await logout();
+    navigate('/');
+  };
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,7 +246,7 @@ export const ProfilePage: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col gap-6 max-w-2xl mx-auto w-full animate-fade-in">
+    <div className="flex flex-col gap-6 max-w-2xl mx-auto w-full pb-24 animate-fade-in">
       {/* Page Title */}
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold text-on-surface">Member Profile & Security</h1>
@@ -122,27 +258,89 @@ export const ProfilePage: React.FC = () => {
       {/* Profile Overview Card */}
       <div className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/30 shadow-xs flex flex-col gap-5">
         <div className="flex items-center justify-between pb-4 border-b border-outline-variant/20">
-          <div className="flex items-center gap-3.5">
-            <div className="w-14 h-14 rounded-2xl bg-primary-container/20 text-primary flex items-center justify-center font-bold text-xl">
+          <div className="flex items-center gap-3.5 min-w-0">
+            <div className="w-14 h-14 rounded-2xl bg-primary-container/20 text-primary flex items-center justify-center font-bold text-xl shrink-0">
               {user?.name?.[0] || 'U'}
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-on-surface">{user?.name}</h2>
+                <h2 className="text-lg font-bold text-on-surface truncate">{user?.name}</h2>
                 {user?.status && <UserStatusBadge status={user.status} />}
               </div>
-              <span className="text-xs font-mono text-primary font-medium">@{user?.username}</span>
+              <span className="text-xs font-mono text-primary font-medium block truncate">@{user?.username}</span>
+              <div className="flex items-center gap-1.5 text-[11px] text-on-surface-variant mt-0.5">
+                <Lock className="w-3 h-3 text-on-surface-variant/70 shrink-0" />
+                <span>To change your legal name, contact Member Care.</span>
+              </div>
             </div>
           </div>
-          <span className="px-2.5 py-1 rounded-full bg-secondary-container text-on-secondary-container text-xs font-semibold capitalize">
-            {user?.role} Tier
-          </span>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {!isEditing ? (
+              <button
+                type="button"
+                onClick={() => {
+                  resetProfileFields();
+                  setIsEditing(true);
+                }}
+                className="h-9 px-3.5 rounded-xl border border-outline-variant/40 hover:bg-surface-container text-xs font-semibold text-primary flex items-center gap-1.5 transition-colors active:scale-[0.98]"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span>Edit</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => {
+                    resetProfileFields();
+                    setIsEditing(false);
+                  }}
+                  className="h-9 px-3 rounded-xl border border-outline-variant/40 hover:bg-surface-container text-xs font-medium text-on-surface-variant transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={handleSaveProfile}
+                  className="h-9 px-4 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50"
+                >
+                  {isSaving ? (
+                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <Check className="w-3.5 h-3.5" />
+                  )}
+                  <span>Save Changes</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Account Credentials */}
+        {/* Feedback Notifications for Profile */}
+        {profileSuccess && (
+          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-2 animate-fade-in">
+            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{profileSuccess}</span>
+          </div>
+        )}
+
+        {profileError && (
+          <div className="p-3 bg-error-container text-on-error-container rounded-xl text-xs font-semibold flex items-center gap-2 animate-fade-in">
+            <AlertCircle className="w-4 h-4 text-error shrink-0" />
+            <span>{profileError}</span>
+          </div>
+        )}
+
+        {/* Read-Only Account Credentials */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
           <div className="p-3.5 bg-surface-container-low rounded-xl">
-            <span className="text-on-surface-variant block mb-1">Primary Account</span>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-on-surface-variant">Primary Account</span>
+              <Lock className="w-3 h-3 text-on-surface-variant/50" />
+            </div>
             <span className="text-sm font-bold text-on-surface block">
               Community {account?.type || 'Checking'}
             </span>
@@ -152,39 +350,258 @@ export const ProfilePage: React.FC = () => {
           </div>
 
           <div className="p-3.5 bg-surface-container-low rounded-xl">
-            <span className="text-on-surface-variant block mb-1">Electronic Routing</span>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-on-surface-variant">Electronic Routing</span>
+              <Lock className="w-3 h-3 text-on-surface-variant/50" />
+            </div>
             <span className="text-sm font-bold text-on-surface font-mono block">
               {ROUTING_NUMBER}
             </span>
             <span className="text-xs text-on-surface-variant mt-0.5 block">ACH / Direct Deposit</span>
           </div>
-
-          <div className="p-3.5 bg-surface-container-low rounded-xl flex items-start gap-2.5">
-            <Mail className="w-4 h-4 text-tertiary shrink-0 mt-0.5" />
-            <div className="min-w-0">
-              <span className="text-on-surface-variant block">Contact Email</span>
-              <span className="font-semibold text-on-surface truncate block">{user?.email || 'N/A'}</span>
-            </div>
-          </div>
-
-          <div className="p-3.5 bg-surface-container-low rounded-xl flex items-start gap-2.5">
-            <Phone className="w-4 h-4 text-tertiary shrink-0 mt-0.5" />
-            <div className="min-w-0">
-              <span className="text-on-surface-variant block">Mobile Phone</span>
-              <span className="font-semibold text-on-surface truncate block">{user?.phone || 'N/A'}</span>
-            </div>
-          </div>
-
-          <div className="p-3.5 bg-surface-container-low rounded-xl sm:col-span-2 flex items-start gap-2.5">
-            <MapPin className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-            <div className="min-w-0">
-              <span className="text-on-surface-variant block">Residential Address</span>
-              <span className="font-semibold text-on-surface block">
-                {user?.address?.street} {user?.address?.apt && `(${user.address.apt})`}, {user?.address?.city}, {user?.address?.state} {user?.address?.zip}
-              </span>
-            </div>
-          </div>
         </div>
+
+        {/* Form Fields: Edit Mode vs View Mode */}
+        {isEditing ? (
+          <form onSubmit={handleSaveProfile} className="space-y-4 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {/* Contact Email */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-on-surface" htmlFor="profileEmail">
+                  Contact Email *
+                </label>
+                <input
+                  id="profileEmail"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (fieldErrors.email) setFieldErrors((p) => ({ ...p, email: undefined }));
+                  }}
+                  placeholder="name@example.com"
+                  disabled={isSaving}
+                  className={`w-full h-11 px-3.5 bg-surface-container-low rounded-xl text-sm text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border transition-colors ${
+                    fieldErrors.email ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/30'
+                  }`}
+                />
+                {fieldErrors.email && (
+                  <p className="text-xs text-error font-medium mt-1">{fieldErrors.email}</p>
+                )}
+              </div>
+
+              {/* Mobile Phone */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-on-surface" htmlFor="profilePhone">
+                  Mobile Phone *
+                </label>
+                <input
+                  id="profilePhone"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  value={phone}
+                  onChange={(e) => {
+                    setPhone(e.target.value);
+                    if (fieldErrors.phone) setFieldErrors((p) => ({ ...p, phone: undefined }));
+                  }}
+                  placeholder="(312) 555-0100"
+                  disabled={isSaving}
+                  className={`w-full h-11 px-3.5 bg-surface-container-low rounded-xl text-sm text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border transition-colors ${
+                    fieldErrors.phone ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/30'
+                  }`}
+                />
+                {fieldErrors.phone && (
+                  <p className="text-xs text-error font-medium mt-1">{fieldErrors.phone}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Residential Address Fields */}
+            <div className="space-y-3 pt-2 border-t border-outline-variant/15">
+              <span className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider block">
+                Residential Address
+              </span>
+
+              {/* Street & Apt */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                <div className="sm:col-span-2 space-y-1">
+                  <label className="text-xs font-semibold text-on-surface" htmlFor="profileStreet">
+                    Street Address *
+                  </label>
+                  <input
+                    id="profileStreet"
+                    type="text"
+                    autoComplete="street-address"
+                    value={street}
+                    onChange={(e) => {
+                      setStreet(e.target.value);
+                      if (fieldErrors.street) setFieldErrors((p) => ({ ...p, street: undefined }));
+                    }}
+                    placeholder="123 Main St"
+                    disabled={isSaving}
+                    className={`w-full h-11 px-3.5 bg-surface-container-low rounded-xl text-sm text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border transition-colors ${
+                      fieldErrors.street ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/30'
+                    }`}
+                  />
+                  {fieldErrors.street && (
+                    <p className="text-xs text-error font-medium mt-1">{fieldErrors.street}</p>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-on-surface" htmlFor="profileApt">
+                    Apt / Suite <span className="text-on-surface-variant font-normal">(optional)</span>
+                  </label>
+                  <input
+                    id="profileApt"
+                    type="text"
+                    autoComplete="address-line2"
+                    value={apt}
+                    onChange={(e) => setApt(e.target.value)}
+                    placeholder="Apt 4B"
+                    disabled={isSaving}
+                    className="w-full h-11 px-3.5 bg-surface-container-low rounded-xl text-sm text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border border-outline-variant/30"
+                  />
+                </div>
+              </div>
+
+              {/* City, State, Zip */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-on-surface" htmlFor="profileCity">
+                    City *
+                  </label>
+                  <input
+                    id="profileCity"
+                    type="text"
+                    autoComplete="address-level2"
+                    value={city}
+                    onChange={(e) => {
+                      setCity(e.target.value);
+                      if (fieldErrors.city) setFieldErrors((p) => ({ ...p, city: undefined }));
+                    }}
+                    placeholder="Chicago"
+                    disabled={isSaving}
+                    className={`w-full h-11 px-3.5 bg-surface-container-low rounded-xl text-sm text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border transition-colors ${
+                      fieldErrors.city ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/30'
+                    }`}
+                  />
+                  {fieldErrors.city && (
+                    <p className="text-xs text-error font-medium mt-1">{fieldErrors.city}</p>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-on-surface" htmlFor="profileState">
+                    State (2 letters) *
+                  </label>
+                  <input
+                    id="profileState"
+                    type="text"
+                    maxLength={2}
+                    autoComplete="address-level1"
+                    value={state}
+                    onChange={(e) => {
+                      setState(e.target.value.toUpperCase());
+                      if (fieldErrors.state) setFieldErrors((p) => ({ ...p, state: undefined }));
+                    }}
+                    placeholder="IL"
+                    disabled={isSaving}
+                    className={`w-full h-11 px-3.5 bg-surface-container-low rounded-xl text-sm text-on-surface uppercase focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border transition-colors ${
+                      fieldErrors.state ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/30'
+                    }`}
+                  />
+                  {fieldErrors.state && (
+                    <p className="text-xs text-error font-medium mt-1">{fieldErrors.state}</p>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-on-surface" htmlFor="profileZip">
+                    ZIP (5 digits) *
+                  </label>
+                  <input
+                    id="profileZip"
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={5}
+                    autoComplete="postal-code"
+                    value={zip}
+                    onChange={(e) => {
+                      setZip(e.target.value);
+                      if (fieldErrors.zip) setFieldErrors((p) => ({ ...p, zip: undefined }));
+                    }}
+                    placeholder="60601"
+                    disabled={isSaving}
+                    className={`w-full h-11 px-3.5 bg-surface-container-low rounded-xl text-sm text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border transition-colors ${
+                      fieldErrors.zip ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/30'
+                    }`}
+                  />
+                  {fieldErrors.zip && (
+                    <p className="text-xs text-error font-medium mt-1">{fieldErrors.zip}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Mobile-only form buttons inside the card */}
+            <div className="flex sm:hidden items-center justify-end gap-2 pt-3 border-t border-outline-variant/20">
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => {
+                  resetProfileFields();
+                  setIsEditing(false);
+                }}
+                className="h-11 px-4 rounded-xl border border-outline-variant/40 hover:bg-surface-container text-xs font-medium text-on-surface-variant transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="h-11 px-5 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50"
+              >
+                {isSaving ? (
+                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <Check className="w-3.5 h-3.5" />
+                )}
+                <span>Save Changes</span>
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
+            <div className="p-3.5 bg-surface-container-low rounded-xl flex items-start gap-2.5">
+              <Mail className="w-4 h-4 text-tertiary shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <span className="text-on-surface-variant block text-xs">Contact Email</span>
+                <span className="font-semibold text-on-surface truncate block text-xs sm:text-sm">{user?.email || 'N/A'}</span>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-surface-container-low rounded-xl flex items-start gap-2.5">
+              <Phone className="w-4 h-4 text-tertiary shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <span className="text-on-surface-variant block text-xs">Mobile Phone</span>
+                <span className="font-semibold text-on-surface truncate block text-xs sm:text-sm">{user?.phone || 'N/A'}</span>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-surface-container-low rounded-xl sm:col-span-2 flex items-start gap-2.5">
+              <MapPin className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <span className="text-on-surface-variant block text-xs">Residential Address</span>
+                <span className="font-semibold text-on-surface block text-xs sm:text-sm">
+                  {user?.address?.street} {user?.address?.apt && `(${user.address.apt})`}, {user?.address?.city}, {user?.address?.state} {user?.address?.zip}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Change Password Card (Re-authenticate first) */}
@@ -288,6 +705,43 @@ export const ProfilePage: React.FC = () => {
             )}
           </button>
         </form>
+      </div>
+
+      {/* Prominent Bottom Sign Out Section */}
+      <div className="pt-2">
+        {!showSignOutConfirm ? (
+          <button
+            type="button"
+            onClick={() => setShowSignOutConfirm(true)}
+            className="w-full h-12 rounded-xl border border-error/40 hover:bg-error-container/20 text-error font-semibold text-sm flex items-center justify-center gap-2 transition-colors active:scale-[0.99] shadow-xs"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Sign Out</span>
+          </button>
+        ) : (
+          <div className="p-4 rounded-xl border border-error/30 bg-error-container/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
+            <div className="flex items-center gap-2 text-on-surface">
+              <LogOut className="w-4 h-4 text-error shrink-0" />
+              <span className="text-xs sm:text-sm font-semibold">Sign out of Emprise Finance?</span>
+            </div>
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setShowSignOutConfirm(false)}
+                className="h-9 px-3.5 rounded-lg border border-outline-variant/40 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="h-9 px-4 rounded-lg bg-error hover:bg-error/90 text-on-error text-xs font-bold transition-all shadow-xs"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

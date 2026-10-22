@@ -12,7 +12,7 @@ import {
   onAuthStateChanged,
   User as FirebaseUser,
 } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured, isMockEnabled, getSecondaryAuth } from '../services/firebase';
 import { deriveAuthEmail, extractUsername, AUTH_EMAIL_DOMAIN } from '../config/brand';
 import { UserProfile, UserRole, UserStatus, SignUpFormData } from '../types';
@@ -30,6 +30,7 @@ interface AuthContextType {
   isSessionExpiredModalOpen: boolean;
   login: (username: string, password: string) => Promise<{ success: boolean; role: UserRole; error?: string }>;
   signUp: (formData: SignUpFormData) => Promise<{ success: boolean; accountNumber: string; error?: string }>;
+  updateProfile: (updates: Partial<Pick<UserProfile, 'email' | 'phone' | 'address'>>) => Promise<{ success: boolean; error?: string }>;
   logout: (isTimeout?: boolean) => Promise<void>;
   closeSessionExpiredModal: () => void;
   clearError: () => void;
@@ -314,6 +315,76 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Update customer profile (contact email, phone, residential address only)
+  const updateProfile = async (
+    updates: Partial<Pick<UserProfile, 'email' | 'phone' | 'address'>>
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!user) {
+      return { success: false, error: 'No active session. Please sign in again.' };
+    }
+
+    // Whitelist allowed fields: email, phone, address only
+    const filteredUpdates: Partial<Pick<UserProfile, 'email' | 'phone' | 'address'>> = {};
+    if (typeof updates.email === 'string') {
+      filteredUpdates.email = updates.email.trim();
+    }
+    if (typeof updates.phone === 'string') {
+      filteredUpdates.phone = updates.phone.trim();
+    }
+    if (updates.address) {
+      filteredUpdates.address = {
+        street: updates.address.street?.trim() || '',
+        apt: updates.address.apt?.trim() || '',
+        city: updates.address.city?.trim() || '',
+        state: updates.address.state?.trim().toUpperCase() || '',
+        zip: updates.address.zip?.trim() || '',
+      };
+    }
+
+    if (isFirebaseConfigured() && db) {
+      try {
+        const userDocRef = doc(db, 'users', user.uid);
+        await updateDoc(userDocRef, filteredUpdates);
+        setUser((prev) => (prev ? { ...prev, ...filteredUpdates } : null));
+        return { success: true };
+      } catch (err: any) {
+        console.error('Failed to update profile in Firestore:', err);
+        return { success: false, error: err.message || 'Unable to update profile. Please try again.' };
+      }
+    } else if (isMockEnabled) {
+      try {
+        await new Promise((res) => setTimeout(res, 300));
+        const mockUser = mockStorage.getUserByUid(user.uid);
+        if (mockUser) {
+          if (filteredUpdates.email !== undefined) mockUser.email = filteredUpdates.email;
+          if (filteredUpdates.phone !== undefined) mockUser.phone = filteredUpdates.phone;
+          if (filteredUpdates.address !== undefined) {
+            mockUser.address = { ...mockUser.address, ...filteredUpdates.address };
+          }
+          try {
+            const stored = localStorage.getItem('emprise_users_v1');
+            if (stored) {
+              const list = JSON.parse(stored);
+              const idx = list.findIndex((u: any) => u.uid === user.uid);
+              if (idx !== -1) {
+                list[idx] = { ...list[idx], ...mockUser };
+                localStorage.setItem('emprise_users_v1', JSON.stringify(list));
+              }
+            }
+          } catch (storageErr) {
+            console.warn('Could not persist mock user update:', storageErr);
+          }
+        }
+        setUser((prev) => (prev ? { ...prev, ...filteredUpdates } : null));
+        return { success: true };
+      } catch (err: any) {
+        return { success: false, error: err.message || 'Failed to update profile in mock storage.' };
+      }
+    } else {
+      return { success: false, error: 'Firebase is not configured and preview mode is not enabled.' };
+    }
+  };
+
   const closeSessionExpiredModal = () => {
     setIsSessionExpiredModalOpen(false);
   };
@@ -331,6 +402,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isSessionExpiredModalOpen,
         login,
         signUp,
+        updateProfile,
         logout,
         closeSessionExpiredModal,
         clearError,
