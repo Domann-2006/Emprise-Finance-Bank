@@ -146,7 +146,7 @@ export const HomePage: React.FC = () => {
         <SecuritySection />
       </main>
 
-      {/* 10. Footer on Light Teal Background with Required Demo Disclaimer & Columns */}
+      {/* 10. Footer on Light Teal Background with FDIC Insurance Notice & Columns */}
       <HomeFooter />
 
       {/* Reusable Forgot Password Assistance Modal */}

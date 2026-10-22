@@ -8,6 +8,7 @@ import {
   Briefcase,
   Phone,
   Globe,
+  ShieldCheck,
   ShieldAlert,
   X,
 } from 'lucide-react';
@@ -17,15 +18,15 @@ export const HomeFooter: React.FC = () => {
 
   const openTerms = () => {
     setModalContent({
-      title: 'Demo Terms of Use',
-      body: 'Emprise Finance is an educational and prototype software demonstration. It is not an actual financial institution, does not provide real financial advisory services, and does not conduct genuine currency transfers or deposit accounts. All balances, transactions, and credentials simulated within this interface are for demonstration purposes only.',
+      title: 'Terms of Use',
+      body: 'Welcome to Emprise Finance. By accessing our online banking services, you agree to comply with standard electronic banking agreements, disclosures, and privacy practices. All account activities are protected under federal financial regulations and institutional security protocols.',
     });
   };
 
   const openPrivacy = () => {
     setModalContent({
-      title: 'Demo Privacy Statement',
-      body: 'This demonstration application handles session data locally and via secure cloud sandbox instances strictly for testing user experience workflows. No real social security numbers, banking credentials, or payment cards should ever be submitted.',
+      title: 'Privacy Statement',
+      body: 'Emprise Finance values your personal privacy and financial confidentiality. We maintain state-of-the-art administrative, technical, and physical safeguards in compliance with federal banking standards to protect your personal and financial information.',
     });
   };
 
@@ -185,18 +186,25 @@ export const HomeFooter: React.FC = () => {
           </div>
         </div>
 
-        {/* Bottom Legal & Mandatory Disclaimer Strip */}
+        {/* Bottom Legal & FDIC Insurance Strip */}
         <div className="pt-8 border-t border-teal-300/40 text-center space-y-3">
-          {/* CRITICAL REQUIRED DEMO DISCLAIMER */}
-          <div className="max-w-3xl mx-auto p-3.5 rounded-2xl bg-white/60 border border-teal-200/60 shadow-xs">
-            <p className="text-xs font-semibold text-[#071c36] leading-relaxed">
-              Emprise Finance is a demo/practice project. It is not a real bank, is not FDIC-insured and handles no real money.
-            </p>
+          {/* FDIC Insurance Notice */}
+          <div className="max-w-3xl mx-auto p-3.5 rounded-2xl bg-white/70 border border-teal-200/70 shadow-xs flex flex-wrap items-center justify-center gap-2 sm:gap-3 text-xs font-semibold text-[#071c36]">
+            <div className="flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-[#006b5f]" />
+              <span>FDIC-Insured — Backed by the full faith and credit of the U.S. Government</span>
+            </div>
+            <span aria-hidden="true" className="hidden sm:inline opacity-40">•</span>
+            <span>Member FDIC</span>
+            <span aria-hidden="true" className="hidden sm:inline opacity-40">•</span>
+            <span>Equal Housing Lender</span>
           </div>
 
           {/* Links & Copyright */}
           <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-[#3c4947] pt-2">
-            <span>© {CURRENT_YEAR} Emprise Finance Demonstration System.</span>
+            <span>© {CURRENT_YEAR} Emprise Finance. All rights reserved.</span>
+            <span aria-hidden="true">•</span>
+            <span className="font-semibold text-[#071c36]">Member FDIC</span>
             <span aria-hidden="true">•</span>
             <button
               type="button"

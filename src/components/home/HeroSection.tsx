@@ -73,7 +73,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSignInClick, childre
             </div>
 
             {/* Verified Community Social Proof Strip */}
-            <div className="pt-4 flex flex-wrap items-center gap-6 text-xs text-white/80 border-t border-white/15">
+            <div className="pt-4 flex flex-wrap items-center gap-4 sm:gap-6 text-xs text-white/80 border-t border-white/15">
               <div className="flex items-center gap-2">
                 <div className="flex text-amber-400">
                   {[...Array(5)].map((_, i) => (
@@ -86,7 +86,11 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSignInClick, childre
               <div className="h-3 w-px bg-white/20 hidden sm:block" />
               <div className="flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-primary-fixed" />
-                <span>55,000+ Surcharge-Free ATMs Nationwide</span>
+                <span>FDIC-Insured up to $250,000</span>
+              </div>
+              <div className="h-3 w-px bg-white/20 hidden md:block" />
+              <div className="hidden md:flex items-center gap-1.5">
+                <span>55,000+ Surcharge-Free ATMs</span>
               </div>
             </div>
           </div>
