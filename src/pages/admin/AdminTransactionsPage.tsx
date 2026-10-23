@@ -192,9 +192,11 @@ export const AdminTransactionsPage: React.FC = () => {
                     ? `±${formatCentsToUSD(tx.amountCents)}`
                     : `-${formatCentsToUSD(tx.amountCents)}`}
                 </span>
-                <span className="text-[11px] text-on-surface-variant font-mono">
-                  Balance After: {formatCentsToUSD(tx.balanceAfterCents)}
-                </span>
+                {typeof tx.balanceAfterCents === 'number' && (
+                  <span className="text-[11px] text-on-surface-variant font-mono">
+                    Balance After: {formatCentsToUSD(tx.balanceAfterCents)}
+                  </span>
+                )}
               </div>
             </div>
           ))

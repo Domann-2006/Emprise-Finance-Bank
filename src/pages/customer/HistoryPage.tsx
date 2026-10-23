@@ -347,9 +347,11 @@ export const HistoryPage: React.FC = () => {
                           ? `+${formatCentsToUSD(tx.amountCents)}`
                           : `-${formatCentsToUSD(tx.amountCents)}`}
                       </span>
-                      <span className="text-[11px] text-on-surface-variant font-mono">
-                        Running Bal: {formatCentsToUSD(tx.balanceAfterCents)}
-                      </span>
+                      {typeof tx.balanceAfterCents === 'number' && (
+                        <span className="text-[11px] text-on-surface-variant font-mono">
+                          Running Bal: {formatCentsToUSD(tx.balanceAfterCents)}
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}

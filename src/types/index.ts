@@ -22,6 +22,7 @@ export interface UserProfile {
   address: UserAddress;
   role: UserRole;
   status: UserStatus;
+  hasPin?: boolean;
   createdAt: any;
 }
 
@@ -40,6 +41,7 @@ export interface AccountDirectoryEntry {
   accountNumber: string;
   accountId: string;
   ownerName: string;
+  ownerUid: string;
   status: UserStatus;
 }
 
@@ -52,7 +54,8 @@ export interface TransactionRecord {
   counterpartyName: string;
   counterpartyAccount: string;
   note: string;
-  balanceAfterCents: number;
+  balanceAfterCents?: number;
+  linkedTransactionId?: string;
   status: TransactionStatus;
   createdAt: any;
 }
@@ -85,4 +88,6 @@ export interface TransferRequest {
   recipientAccountNumber: string;
   amountCents: number;
   note: string;
+  pin: string;
 }
+

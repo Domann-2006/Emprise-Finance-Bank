@@ -28,10 +28,20 @@ import {
   Pencil,
   Lock,
   LogOut,
+  X,
 } from 'lucide-react';
+import { isWeakPin } from '../../utils/pin';
+import { useDraftState } from '../../hooks/useDraftState';
 
 export const ProfilePage: React.FC = () => {
-  const { user, updateProfile, logout } = useAuth();
+  const {
+    user,
+    updateProfile,
+    logout,
+    setTransferPin,
+    changeTransferPin,
+    resetTransferPinWithPassword,
+  } = useAuth();
   const navigate = useNavigate();
   const [account, setAccount] = useState<BankAccount | null>(null);
 
@@ -41,14 +51,14 @@ export const ProfilePage: React.FC = () => {
   const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
 
-  // Form Fields State
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [street, setStreet] = useState('');
-  const [apt, setApt] = useState('');
-  const [city, setCity] = useState('');
-  const [state, setState] = useState('');
-  const [zip, setZip] = useState('');
+  // Form Fields State with draft persistence
+  const [email, setEmail, clearEmailDraft] = useDraftState(user?.uid, 'profile_email', user?.email || '');
+  const [phone, setPhone, clearPhoneDraft] = useDraftState(user?.uid, 'profile_phone', user?.phone || '');
+  const [street, setStreet, clearStreetDraft] = useDraftState(user?.uid, 'profile_street', user?.address?.street || '');
+  const [apt, setApt, clearAptDraft] = useDraftState(user?.uid, 'profile_apt', user?.address?.apt || '');
+  const [city, setCity, clearCityDraft] = useDraftState(user?.uid, 'profile_city', user?.address?.city || '');
+  const [state, setState, clearStateDraft] = useDraftState(user?.uid, 'profile_state', user?.address?.state || '');
+  const [zip, setZip, clearZipDraft] = useDraftState(user?.uid, 'profile_zip', user?.address?.zip || '');
 
   // Field validation errors
   const [fieldErrors, setFieldErrors] = useState<{
@@ -72,6 +82,16 @@ export const ProfilePage: React.FC = () => {
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
+  // PIN Management state
+  const [pinModalType, setPinModalType] = useState<'setup' | 'change' | 'reset' | null>(null);
+  const [pinCurrent, setPinCurrent] = useState('');
+  const [pinNew, setPinNew] = useState('');
+  const [pinConfirm, setPinConfirm] = useState('');
+  const [pinPassword, setPinPassword] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [pinSuccess, setPinSuccess] = useState<string | null>(null);
+  const [isPinSubmitting, setIsPinSubmitting] = useState(false);
+
   const resetProfileFields = () => {
     setEmail(user?.email || '');
     setPhone(user?.phone || '');
@@ -80,13 +100,26 @@ export const ProfilePage: React.FC = () => {
     setCity(user?.address?.city || '');
     setState(user?.address?.state || '');
     setZip(user?.address?.zip || '');
+    clearEmailDraft();
+    clearPhoneDraft();
+    clearStreetDraft();
+    clearAptDraft();
+    clearCityDraft();
+    clearStateDraft();
+    clearZipDraft();
     setFieldErrors({});
     setProfileError(null);
   };
 
   useEffect(() => {
-    if (user) {
-      resetProfileFields();
+    if (user && !isEditing) {
+      setEmail(user.email || '');
+      setPhone(user.phone || '');
+      setStreet(user.address?.street || '');
+      setApt(user.address?.apt || '');
+      setCity(user.address?.city || '');
+      setState(user.address?.state || '');
+      setZip(user.address?.zip || '');
     }
   }, [user]);
 
@@ -169,6 +202,13 @@ export const ProfilePage: React.FC = () => {
     setIsSaving(false);
 
     if (res.success) {
+      clearEmailDraft();
+      clearPhoneDraft();
+      clearStreetDraft();
+      clearAptDraft();
+      clearCityDraft();
+      clearStateDraft();
+      clearZipDraft();
       setProfileSuccess('Profile updated successfully.');
       setIsEditing(false);
       setTimeout(() => {
@@ -176,6 +216,126 @@ export const ProfilePage: React.FC = () => {
       }, 4000);
     } else {
       setProfileError(res.error || 'Failed to update profile. Please try again.');
+    }
+  };
+
+  const handleSetupPinSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPinError(null);
+    setPinSuccess(null);
+
+    const cleanPin = pinNew.trim();
+    if (cleanPin.length !== 4 || !/^\d{4}$/.test(cleanPin)) {
+      setPinError('PIN must be exactly 4 digits.');
+      return;
+    }
+    if (isWeakPin(cleanPin)) {
+      setPinError('PIN is too simple. Avoid repeated digits (like 1111) or sequences (like 1234).');
+      return;
+    }
+    if (cleanPin !== pinConfirm.trim()) {
+      setPinError('PIN confirmation does not match.');
+      return;
+    }
+
+    setIsPinSubmitting(true);
+    const res = await setTransferPin(cleanPin);
+    setIsPinSubmitting(false);
+
+    if (res.success) {
+      setPinSuccess('Transfer PIN configured successfully.');
+      setTimeout(() => {
+        setPinModalType(null);
+        setPinNew('');
+        setPinConfirm('');
+        setPinSuccess(null);
+      }, 1500);
+    } else {
+      setPinError(res.error || 'Failed to set transfer PIN.');
+    }
+  };
+
+  const handleChangePinSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPinError(null);
+    setPinSuccess(null);
+
+    const cleanCurr = pinCurrent.trim();
+    const cleanNew = pinNew.trim();
+
+    if (cleanCurr.length !== 4 || !/^\d{4}$/.test(cleanCurr)) {
+      setPinError('Current PIN must be 4 digits.');
+      return;
+    }
+    if (cleanNew.length !== 4 || !/^\d{4}$/.test(cleanNew)) {
+      setPinError('New PIN must be 4 digits.');
+      return;
+    }
+    if (isWeakPin(cleanNew)) {
+      setPinError('New PIN is too simple. Avoid repeated digits or straight sequences.');
+      return;
+    }
+    if (cleanNew !== pinConfirm.trim()) {
+      setPinError('New PIN confirmation does not match.');
+      return;
+    }
+
+    setIsPinSubmitting(true);
+    const res = await changeTransferPin(cleanCurr, cleanNew);
+    setIsPinSubmitting(false);
+
+    if (res.success) {
+      setPinSuccess('Transfer PIN updated successfully.');
+      setTimeout(() => {
+        setPinModalType(null);
+        setPinCurrent('');
+        setPinNew('');
+        setPinConfirm('');
+        setPinSuccess(null);
+      }, 1500);
+    } else {
+      setPinError(res.error || 'Failed to update transfer PIN.');
+    }
+  };
+
+  const handleResetPinSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPinError(null);
+    setPinSuccess(null);
+
+    if (!pinPassword) {
+      setPinError('Account password is required for security verification.');
+      return;
+    }
+    const cleanNew = pinNew.trim();
+    if (cleanNew.length !== 4 || !/^\d{4}$/.test(cleanNew)) {
+      setPinError('New PIN must be 4 digits.');
+      return;
+    }
+    if (isWeakPin(cleanNew)) {
+      setPinError('New PIN is too simple. Avoid repeated digits or straight sequences.');
+      return;
+    }
+    if (cleanNew !== pinConfirm.trim()) {
+      setPinError('New PIN confirmation does not match.');
+      return;
+    }
+
+    setIsPinSubmitting(true);
+    const res = await resetTransferPinWithPassword(pinPassword, cleanNew);
+    setIsPinSubmitting(false);
+
+    if (res.success) {
+      setPinSuccess('Transfer PIN reset successfully.');
+      setTimeout(() => {
+        setPinModalType(null);
+        setPinPassword('');
+        setPinNew('');
+        setPinConfirm('');
+        setPinSuccess(null);
+      }, 1500);
+    } else {
+      setPinError(res.error || 'Password verification failed.');
     }
   };
 
@@ -603,6 +763,242 @@ export const ProfilePage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Transfer PIN Security Card */}
+      <div className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/30 shadow-xs flex flex-col gap-4">
+        <div className="flex items-center justify-between pb-3 border-b border-outline-variant/20">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-primary-container/20 flex items-center justify-center text-primary">
+              <KeyRound className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-on-surface">Transfer Authorization PIN</h3>
+              <p className="text-[11px] text-on-surface-variant">Required to authorize customer-to-customer transfers</p>
+            </div>
+          </div>
+          <span
+            className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+              user?.hasPin
+                ? 'bg-emerald-500/10 text-emerald-800'
+                : 'bg-amber-500/10 text-amber-800'
+            }`}
+          >
+            {user?.hasPin ? 'Configured' : 'Not Set'}
+          </span>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div>
+            <span className="font-semibold text-on-surface block">
+              {user?.hasPin ? 'PIN Status: •••• (Active)' : 'No transfer PIN configured'}
+            </span>
+            <span className="text-on-surface-variant block mt-0.5">
+              {user?.hasPin
+                ? 'A 4-digit PIN is verified every time you send money to another member.'
+                : 'Set a 4-digit PIN before initiating peer-to-peer transfers.'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {user?.hasPin ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPinModalType('change');
+                    setPinCurrent('');
+                    setPinNew('');
+                    setPinConfirm('');
+                    setPinError(null);
+                    setPinSuccess(null);
+                  }}
+                  className="h-9 px-3.5 rounded-xl border border-outline-variant/40 hover:bg-surface-container text-xs font-semibold text-primary transition-colors"
+                >
+                  Change PIN
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPinModalType('reset');
+                    setPinPassword('');
+                    setPinNew('');
+                    setPinConfirm('');
+                    setPinError(null);
+                    setPinSuccess(null);
+                  }}
+                  className="h-9 px-3 rounded-xl text-xs font-medium text-on-surface-variant hover:text-on-surface transition-colors"
+                >
+                  Forgot PIN?
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setPinModalType('setup');
+                  setPinNew('');
+                  setPinConfirm('');
+                  setPinError(null);
+                  setPinSuccess(null);
+                }}
+                className="h-9 px-4 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shadow-xs transition-all"
+              >
+                Set Up PIN
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* PIN Management Modal */}
+      {pinModalType && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-surface-container-lowest max-w-md w-full rounded-2xl p-6 shadow-2xl relative overflow-hidden flex flex-col gap-4 border border-outline-variant/30">
+            <div className="flex items-center justify-between pb-2 border-b border-outline-variant/20">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold text-on-surface">
+                  {pinModalType === 'setup'
+                    ? 'Set Up Transfer PIN'
+                    : pinModalType === 'change'
+                    ? 'Change Transfer PIN'
+                    : 'Reset Transfer PIN'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPinModalType(null)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {pinError && (
+              <div className="p-3 bg-error-container text-on-error-container rounded-xl text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-error shrink-0" />
+                <span>{pinError}</span>
+              </div>
+            )}
+
+            {pinSuccess && (
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{pinSuccess}</span>
+              </div>
+            )}
+
+            <form
+              onSubmit={
+                pinModalType === 'setup'
+                  ? handleSetupPinSubmit
+                  : pinModalType === 'change'
+                  ? handleChangePinSubmit
+                  : handleResetPinSubmit
+              }
+              className="space-y-3.5"
+            >
+              {pinModalType === 'change' && (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-on-surface" htmlFor="pinCurrentInput">
+                    Current 4-Digit PIN *
+                  </label>
+                  <input
+                    id="pinCurrentInput"
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={pinCurrent}
+                    onChange={(e) => setPinCurrent(e.target.value.replace(/\D/g, ''))}
+                    placeholder="••••"
+                    required
+                    className="w-full h-11 px-3.5 text-center text-xl tracking-widest bg-surface-container-low rounded-xl text-on-surface border border-outline-variant/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              )}
+
+              {pinModalType === 'reset' && (
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-on-surface" htmlFor="pinPasswordInput">
+                    Account Password (for verification) *
+                  </label>
+                  <input
+                    id="pinPasswordInput"
+                    type="password"
+                    value={pinPassword}
+                    onChange={(e) => setPinPassword(e.target.value)}
+                    placeholder="••••••••••••"
+                    required
+                    className="w-full h-11 px-3.5 bg-surface-container-low rounded-xl text-sm text-on-surface border border-outline-variant/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-on-surface" htmlFor="pinNewInput">
+                    {pinModalType === 'change' ? 'New 4-Digit PIN *' : '4-Digit PIN *'}
+                  </label>
+                  <input
+                    id="pinNewInput"
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={pinNew}
+                    onChange={(e) => setPinNew(e.target.value.replace(/\D/g, ''))}
+                    placeholder="••••"
+                    required
+                    className="w-full h-11 px-3.5 text-center text-xl tracking-widest bg-surface-container-low rounded-xl text-on-surface border border-outline-variant/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-on-surface" htmlFor="pinConfirmInput">
+                    Confirm PIN *
+                  </label>
+                  <input
+                    id="pinConfirmInput"
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={pinConfirm}
+                    onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, ''))}
+                    placeholder="••••"
+                    required
+                    className="w-full h-11 px-3.5 text-center text-xl tracking-widest bg-surface-container-low rounded-xl text-on-surface border border-outline-variant/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPinModalType(null)}
+                  className="h-11 rounded-xl bg-surface-container text-xs font-semibold text-on-surface hover:bg-surface-container-high"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isPinSubmitting || pinNew.length !== 4 || pinConfirm.length !== 4}
+                  className="h-11 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {isPinSubmitting ? (
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <span>Save PIN</span>
+                      <Check className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Change Password Card (Re-authenticate first) */}
       <div className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/30 shadow-xs flex flex-col gap-5">

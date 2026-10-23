@@ -24,6 +24,8 @@ import {
   HelpCircle,
 } from 'lucide-react';
 
+import { useDraftState } from '../../hooks/useDraftState';
+
 interface FAQItem {
   id: string;
   category: 'all' | 'transfers' | 'cards' | 'accounts' | 'loans';
@@ -32,7 +34,7 @@ interface FAQItem {
 }
 
 export const SupportPage: React.FC = () => {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useDraftState<string>(null, 'support_search', '');
   const [activeCategory, setActiveCategory] = useState<'all' | 'transfers' | 'cards' | 'accounts' | 'loans'>('all');
   const [openFaqId, setOpenFaqId] = useState<string | null>('q1'); // default expanded
   const [copiedKey, setCopiedKey] = useState<string | null>(null);

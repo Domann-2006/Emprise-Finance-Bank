@@ -389,9 +389,11 @@ export const DashboardPage: React.FC = () => {
                       ? `+${formatCentsToUSD(tx.amountCents)}`
                       : `-${formatCentsToUSD(tx.amountCents)}`}
                   </span>
-                  <span className="text-[11px] text-on-surface-variant">
-                    Bal: {formatCentsToUSD(tx.balanceAfterCents)}
-                  </span>
+                  {typeof tx.balanceAfterCents === 'number' && (
+                    <span className="text-[11px] text-on-surface-variant">
+                      Bal: {formatCentsToUSD(tx.balanceAfterCents)}
+                    </span>
+                  )}
                 </div>
               </div>
             ))}

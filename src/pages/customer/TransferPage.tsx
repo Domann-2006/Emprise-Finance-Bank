@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -8,31 +8,67 @@ import {
 } from '../../services/banking';
 import { BankAccount, AccountDirectoryEntry } from '../../types';
 import { formatCentsToUSD, maskAccountNumber, parseUSDToCents } from '../../utils/format';
+import { isWeakPin } from '../../utils/pin';
+import { useDraftState } from '../../hooks/useDraftState';
 import {
   Wallet,
   ArrowRight,
   CheckCircle2,
   AlertCircle,
-  HelpCircle,
-  User,
+  Shield,
+  Lock,
+  KeyRound,
   Check,
   Zap,
+  X,
+  HelpCircle,
 } from 'lucide-react';
 
 export const TransferPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, setTransferPin, resetTransferPinWithPassword } = useAuth();
   const navigate = useNavigate();
 
   const [account, setAccount] = useState<BankAccount | null>(null);
-  const [recipientAccountNum, setRecipientAccountNum] = useState('');
+
+  // Draft persistence for form inputs (debounced 300ms, 24h TTL, cleared on transfer success)
+  const [recipientAccountNum, setRecipientAccountNum, clearRecipient] = useDraftState(
+    user?.uid,
+    'transfer_recipient',
+    ''
+  );
+  const [amountStr, setAmountStr, clearAmount] = useDraftState(user?.uid, 'transfer_amount', '');
+  const [note, setNote, clearMemo] = useDraftState(user?.uid, 'transfer_note', '');
+
   const [verifiedRecipient, setVerifiedRecipient] = useState<AccountDirectoryEntry | null>(null);
   const [isVerifyingRecipient, setIsVerifyingRecipient] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
 
-  const [amountStr, setAmountStr] = useState('50.00');
-  const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
+
+  // PIN modal & Authorization state
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [pinDigits, setPinDigits] = useState<string[]>(['', '', '', '']);
+  const [pinError, setPinError] = useState<string | null>(null);
+  const pinInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Lockout state (3 attempts -> 15 min client-side lockout)
+  const [lockoutRemainingSec, setLockoutRemainingSec] = useState<number>(0);
+
+  // Initial PIN setup modal for users with hasPin === false
+  const [isSetupPinModalOpen, setIsSetupPinModalOpen] = useState(false);
+  const [setupPin, setSetupPin] = useState('');
+  const [setupConfirmPin, setSetupConfirmPin] = useState('');
+  const [setupPinError, setSetupPinError] = useState<string | null>(null);
+  const [isSavingPin, setIsSavingPin] = useState(false);
+
+  // Forgot PIN reset modal
+  const [isResetPinModalOpen, setIsResetPinModalOpen] = useState(false);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetNewPin, setResetNewPin] = useState('');
+  const [resetConfirmPin, setResetConfirmPin] = useState('');
+  const [resetPinError, setResetPinError] = useState<string | null>(null);
+  const [isResettingPin, setIsResettingPin] = useState(false);
 
   // Success Modal State
   const [successData, setSuccessData] = useState<{
@@ -42,6 +78,7 @@ export const TransferPage: React.FC = () => {
     accountNumber: string;
   } | null>(null);
 
+  // Load Customer Account
   useEffect(() => {
     if (!user) return;
     const load = async () => {
@@ -49,6 +86,33 @@ export const TransferPage: React.FC = () => {
       setAccount(acct);
     };
     load();
+  }, [user]);
+
+  // Lockout timer ticker
+  useEffect(() => {
+    if (!user) return;
+    const checkLockout = () => {
+      try {
+        const raw = localStorage.getItem(`emprise:pinfail:${user.uid}`);
+        if (!raw) {
+          setLockoutRemainingSec(0);
+          return;
+        }
+        const data = JSON.parse(raw);
+        if (data.lockedUntil && data.lockedUntil > Date.now()) {
+          const diff = Math.ceil((data.lockedUntil - Date.now()) / 1000);
+          setLockoutRemainingSec(diff);
+        } else {
+          setLockoutRemainingSec(0);
+        }
+      } catch {
+        setLockoutRemainingSec(0);
+      }
+    };
+
+    checkLockout();
+    const interval = setInterval(checkLockout, 1000);
+    return () => clearInterval(interval);
   }, [user]);
 
   // Live Recipient Lookup when 10 digits entered
@@ -84,9 +148,6 @@ export const TransferPage: React.FC = () => {
       return () => clearTimeout(timer);
     } else {
       setVerifiedRecipient(null);
-      if (clean.length > 0 && clean.length !== 10) {
-        // waiting for 10 digits
-      }
     }
   }, [recipientAccountNum, account]);
 
@@ -95,16 +156,18 @@ export const TransferPage: React.FC = () => {
     setAmountStr((current + increment).toFixed(2));
   };
 
-  const handleSelectRecent = (acctNum: string) => {
-    setRecipientAccountNum(acctNum);
-  };
-
-  const handleSend = async (e: React.FormEvent) => {
+  // Step 1: Validate form and open PIN modal
+  const handleInitiateSend = (e: React.FormEvent) => {
     e.preventDefault();
     setTransferError(null);
 
     if (!account || !user) {
       setTransferError('Account details not ready.');
+      return;
+    }
+
+    if (!user.hasPin) {
+      setIsSetupPinModalOpen(true);
       return;
     }
 
@@ -131,7 +194,73 @@ export const TransferPage: React.FC = () => {
       return;
     }
 
+    // Open PIN prompt modal
+    setPinDigits(['', '', '', '']);
+    setPinError(null);
+    setIsPinModalOpen(true);
+    setTimeout(() => {
+      pinInputRefs.current[0]?.focus();
+    }, 100);
+  };
+
+  // Step 2: Auto-advancing 4-digit PIN box handling
+  const handlePinDigitChange = (index: number, val: string) => {
+    setPinError(null);
+    const cleaned = val.replace(/\D/g, '');
+    const newDigits = [...pinDigits];
+
+    if (cleaned.length > 1) {
+      // Handle paste
+      const chars = cleaned.slice(0, 4).split('');
+      chars.forEach((c, idx) => {
+        newDigits[idx] = c;
+      });
+      setPinDigits(newDigits);
+      if (chars.length === 4) {
+        handleExecuteTransfer(chars.join(''));
+      } else {
+        pinInputRefs.current[Math.min(chars.length, 3)]?.focus();
+      }
+      return;
+    }
+
+    newDigits[index] = cleaned;
+    setPinDigits(newDigits);
+
+    if (cleaned && index < 3) {
+      pinInputRefs.current[index + 1]?.focus();
+    }
+
+    // If 4 digits entered, auto-submit
+    if (cleaned && index === 3 && newDigits.every((d) => d.length === 1)) {
+      handleExecuteTransfer(newDigits.join(''));
+    }
+  };
+
+  const handlePinKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !pinDigits[index] && index > 0) {
+      pinInputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  // Step 3: Execute transfer with 4-digit PIN
+  const handleExecuteTransfer = async (pinCode: string) => {
+    if (!account || !user || !verifiedRecipient) return;
+
+    if (lockoutRemainingSec > 0) {
+      setPinError(`Account locked due to consecutive wrong attempts. Try again in ${formatLockoutTime(lockoutRemainingSec)}.`);
+      return;
+    }
+
+    if (pinCode.length !== 4) {
+      setPinError('Please enter all 4 digits of your transfer PIN.');
+      return;
+    }
+
+    const cents = parseUSDToCents(amountStr);
     setIsSubmitting(true);
+    setPinError(null);
+
     try {
       const result = await executeTransferTransaction({
         senderAccountId: account.id,
@@ -139,7 +268,13 @@ export const TransferPage: React.FC = () => {
         recipientAccountNumber: recipientAccountNum.trim(),
         amountCents: cents,
         note: note.trim(),
+        pin: pinCode,
       });
+
+      // Clear wrong attempt tracking on success
+      try {
+        localStorage.removeItem(`emprise:pinfail:${user.uid}`);
+      } catch {}
 
       // Update local state
       setAccount({ ...account, balanceCents: result.senderNewBalanceCents });
@@ -149,20 +284,129 @@ export const TransferPage: React.FC = () => {
         recipientName: result.recipientName,
         accountNumber: recipientAccountNum.trim(),
       });
-      // Clear form
-      setAmountStr('50.00');
-      setNote('');
-      setRecipientAccountNum('');
+
+      // Clear draft persistence
+      clearRecipient();
+      clearAmount();
+      clearMemo();
       setVerifiedRecipient(null);
+      setIsPinModalOpen(false);
     } catch (err: any) {
-      setTransferError(err.message || 'Transfer failed. Please check your details.');
+      // Record failure attempt for lockout tracking
+      const isPinFail =
+        err?.code === 'PIN_OR_PERMISSION' ||
+        err?.message?.toLowerCase().includes('pin') ||
+        err?.message?.toLowerCase().includes('permission');
+
+      if (isPinFail) {
+        try {
+          const raw = localStorage.getItem(`emprise:pinfail:${user.uid}`);
+          const data = raw ? JSON.parse(raw) : { count: 0, lockedUntil: 0 };
+          const newCount = (data.count || 0) + 1;
+          if (newCount >= 3) {
+            const lockedUntil = Date.now() + 15 * 60 * 1000; // 15 min lockout
+            localStorage.setItem(
+              `emprise:pinfail:${user.uid}`,
+              JSON.stringify({ count: newCount, lockedUntil })
+            );
+            setLockoutRemainingSec(15 * 60);
+            setPinError('Too many failed PIN attempts. Locked for 15 minutes.');
+          } else {
+            localStorage.setItem(
+              `emprise:pinfail:${user.uid}`,
+              JSON.stringify({ count: newCount, lockedUntil: 0 })
+            );
+            setPinError(`Incorrect PIN. ${3 - newCount} attempt(s) remaining before 15-minute lockout.`);
+          }
+        } catch {}
+      } else {
+        setPinError(err.message || 'Transfer failed. Please check your account details.');
+      }
+      setPinDigits(['', '', '', '']);
+      pinInputRefs.current[0]?.focus();
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // Helper for formatting mm:ss
+  const formatLockoutTime = (secs: number) => {
+    const mins = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${mins}m ${s < 10 ? '0' : ''}${s}s`;
+  };
+
+  // Handle Set Transfer PIN submission
+  const handleSaveInitialPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSetupPinError(null);
+
+    if (setupPin.length !== 4 || !/^\d{4}$/.test(setupPin)) {
+      setSetupPinError('PIN must be exactly 4 numeric digits.');
+      return;
+    }
+    if (isWeakPin(setupPin)) {
+      setSetupPinError('PIN is too simple. Avoid repeated digits (like 1111) or sequences (like 1234).');
+      return;
+    }
+    if (setupPin !== setupConfirmPin) {
+      setSetupPinError('PIN confirmation does not match.');
+      return;
+    }
+
+    setIsSavingPin(true);
+    const res = await setTransferPin(setupPin);
+    setIsSavingPin(false);
+
+    if (res.success) {
+      setIsSetupPinModalOpen(false);
+      setSetupPin('');
+      setSetupConfirmPin('');
+    } else {
+      setSetupPinError(res.error || 'Failed to configure transfer PIN.');
+    }
+  };
+
+  // Handle Forgot PIN reset
+  const handleResetPinSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetPinError(null);
+
+    if (!resetPassword) {
+      setResetPinError('Please enter your account password.');
+      return;
+    }
+    if (resetNewPin.length !== 4 || !/^\d{4}$/.test(resetNewPin)) {
+      setResetPinError('New PIN must be 4 digits.');
+      return;
+    }
+    if (isWeakPin(resetNewPin)) {
+      setResetPinError('New PIN is too simple. Avoid repeated digits or straight sequences.');
+      return;
+    }
+    if (resetNewPin !== resetConfirmPin) {
+      setResetPinError('New PIN confirmation does not match.');
+      return;
+    }
+
+    setIsResettingPin(true);
+    const res = await resetTransferPinWithPassword(resetPassword, resetNewPin);
+    setIsResettingPin(false);
+
+    if (res.success) {
+      setIsResetPinModalOpen(false);
+      setResetPassword('');
+      setResetNewPin('');
+      setResetConfirmPin('');
+      setLockoutRemainingSec(0);
+      setPinError(null);
+    } else {
+      setResetPinError(res.error || 'Password verification failed.');
+    }
+  };
+
   return (
-    <div className="flex flex-col gap-6 max-w-xl mx-auto w-full animate-fade-in">
+    <div className="flex flex-col gap-6 max-w-xl mx-auto w-full animate-fade-in pb-16">
       {/* Title & Context */}
       <div className="flex flex-col gap-1">
         <div className="flex items-center justify-between">
@@ -172,7 +416,7 @@ export const TransferPage: React.FC = () => {
             <span>Instant</span>
           </span>
         </div>
-        <p className="text-xs text-on-surface-variant">Send funds directly to any verified account number</p>
+        <p className="text-xs text-on-surface-variant">Send funds securely to any verified member account</p>
       </div>
 
       {/* From-Account Source Card */}
@@ -208,6 +452,30 @@ export const TransferPage: React.FC = () => {
         </div>
       </div>
 
+      {/* PIN Setup Prompt Card if user hasPin === false */}
+      {user && !user.hasPin && (
+        <div className="p-4 bg-primary-container/15 border border-primary/20 rounded-2xl flex items-center justify-between gap-3 animate-fade-in">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+              <KeyRound className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h4 className="text-xs font-bold text-on-surface truncate">Create your 4-digit Transfer PIN</h4>
+              <p className="text-[11px] text-on-surface-variant">
+                A security PIN is required to authorize all outgoing transfers.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsSetupPinModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shrink-0 shadow-xs"
+          >
+            Set PIN
+          </button>
+        </div>
+      )}
+
       {/* Form Error Banner */}
       {transferError && (
         <div className="p-3.5 bg-error-container text-on-error-container rounded-xl flex items-start gap-2 text-xs animate-shake">
@@ -218,7 +486,7 @@ export const TransferPage: React.FC = () => {
 
       {/* Main Transfer Form Card */}
       <form
-        onSubmit={handleSend}
+        onSubmit={handleInitiateSend}
         className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/30 shadow-xs flex flex-col gap-5"
       >
         {/* Recipient Account Number Field with live lookup */}
@@ -241,36 +509,10 @@ export const TransferPage: React.FC = () => {
               maxLength={10}
               value={recipientAccountNum}
               onChange={(e) => setRecipientAccountNum(e.target.value.replace(/\D/g, ''))}
-              placeholder="e.g. 4829103309"
+              placeholder="Enter 10-digit account number"
               required
               className="w-full h-12 px-3.5 bg-surface-container-low rounded-xl text-base font-mono text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border border-outline-variant/30 tracking-wider"
             />
-          </div>
-
-          {/* Quick Contact Chips to test transfers easily */}
-          <div className="pt-1 flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
-            <span className="text-[11px] text-on-surface-variant shrink-0">Sample:</span>
-            <button
-              type="button"
-              onClick={() => handleSelectRecent('4829108421')}
-              className="px-2.5 py-1 rounded-lg bg-surface-container text-on-surface hover:bg-surface-container-high text-[11px] font-medium shrink-0"
-            >
-              Elena (4829108421)
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSelectRecent('4829103309')}
-              className="px-2.5 py-1 rounded-lg bg-surface-container text-on-surface hover:bg-surface-container-high text-[11px] font-medium shrink-0"
-            >
-              Marcus (4829103309)
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSelectRecent('4829104829')}
-              className="px-2.5 py-1 rounded-lg bg-surface-container text-on-surface hover:bg-surface-container-high text-[11px] font-medium shrink-0"
-            >
-              Alex (4829104829)
-            </button>
           </div>
 
           {/* Verified Recipient Banner */}
@@ -318,6 +560,7 @@ export const TransferPage: React.FC = () => {
                 min="0.01"
                 value={amountStr}
                 onChange={(e) => setAmountStr(e.target.value)}
+                placeholder="0.00"
                 required
                 className="bg-transparent text-center w-48 focus:outline-none font-bold"
               />
@@ -379,18 +622,326 @@ export const TransferPage: React.FC = () => {
           disabled={isSubmitting || !verifiedRecipient}
           className="h-12 w-full mt-2 bg-primary-container hover:bg-primary text-on-primary font-bold text-sm rounded-xl shadow-md transition-all active:scale-[0.99] flex items-center justify-center gap-2 disabled:opacity-50"
         >
-          {isSubmitting ? (
-            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-          ) : (
-            <>
-              <span>Send Money Now</span>
-              <ArrowRight className="w-4 h-4" />
-            </>
-          )}
+          <span>Send Money Now</span>
+          <ArrowRight className="w-4 h-4" />
         </button>
       </form>
 
-      {/* Success Modal */}
+      {/* ================= 4-DIGIT PIN BOTTOM-SHEET / MODAL ================= */}
+      {isPinModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-surface-container-lowest w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl p-6 sm:p-7 shadow-2xl relative overflow-hidden flex flex-col gap-5 border border-outline-variant/30 animate-slide-up sm:animate-none">
+            {/* Modal Top Header */}
+            <div className="flex items-center justify-between pb-2 border-b border-outline-variant/20">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-primary-container/20 text-primary flex items-center justify-center">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-on-surface">Authorize Transfer</h3>
+                  <p className="text-[11px] text-on-surface-variant">Enter your 4-digit transfer PIN</p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsPinModalOpen(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Transfer Summary Pill */}
+            <div className="p-3.5 bg-surface-container-low rounded-xl flex items-center justify-between text-xs">
+              <div>
+                <span className="text-on-surface-variant block text-[11px]">Sending to:</span>
+                <span className="font-bold text-on-surface">{verifiedRecipient?.ownerName}</span>
+              </div>
+              <div className="text-right">
+                <span className="text-on-surface-variant block text-[11px]">Amount:</span>
+                <span className="font-bold text-sm text-primary font-ledger-numerical">
+                  {formatCentsToUSD(parseUSDToCents(amountStr))}
+                </span>
+              </div>
+            </div>
+
+            {/* Error / Lockout notice */}
+            {pinError && (
+              <div className="p-3 bg-error-container text-on-error-container rounded-xl text-xs font-semibold flex items-center gap-2 animate-shake">
+                <AlertCircle className="w-4 h-4 text-error shrink-0" />
+                <span>{pinError}</span>
+              </div>
+            )}
+
+            {lockoutRemainingSec > 0 && (
+              <div className="p-3 bg-error-container text-on-error-container rounded-xl text-xs font-semibold flex items-center justify-between animate-fade-in">
+                <span>Security Lockout Active:</span>
+                <span className="font-mono font-bold">{formatLockoutTime(lockoutRemainingSec)}</span>
+              </div>
+            )}
+
+            {/* 4 Masked Auto-Advancing Digit Boxes */}
+            <div className="flex justify-center gap-3 py-2">
+              {[0, 1, 2, 3].map((idx) => (
+                <input
+                  key={idx}
+                  ref={(el) => {
+                    pinInputRefs.current[idx] = el;
+                  }}
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={idx === 0 ? 4 : 1}
+                  disabled={lockoutRemainingSec > 0 || isSubmitting}
+                  value={pinDigits[idx]}
+                  onChange={(e) => handlePinDigitChange(idx, e.target.value)}
+                  onKeyDown={(e) => handlePinKeyDown(idx, e)}
+                  autoComplete="off"
+                  className="w-13 h-14 text-center text-2xl font-bold bg-surface-container-low rounded-2xl border border-outline-variant/40 text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary disabled:opacity-40"
+                />
+              ))}
+            </div>
+
+            {/* Actions & Links */}
+            <div className="flex items-center justify-between pt-1 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPinModalOpen(false);
+                  setIsResetPinModalOpen(true);
+                }}
+                className="text-primary font-semibold hover:underline"
+              >
+                Forgot PIN?
+              </button>
+
+              <button
+                type="button"
+                disabled={pinDigits.some((d) => !d) || isSubmitting || lockoutRemainingSec > 0}
+                onClick={() => handleExecuteTransfer(pinDigits.join(''))}
+                className="h-10 px-5 bg-primary hover:bg-primary/90 text-on-primary font-bold rounded-xl shadow-xs transition-all active:scale-98 disabled:opacity-40 flex items-center gap-1.5"
+              >
+                {isSubmitting ? (
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <span>Confirm</span>
+                    <Check className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= INITIAL PIN SETUP MODAL ================= */}
+      {isSetupPinModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-surface-container-lowest max-w-md w-full rounded-2xl p-6 shadow-2xl relative overflow-hidden flex flex-col gap-4 border border-outline-variant/30">
+            <div className="flex items-center justify-between pb-2 border-b border-outline-variant/20">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold text-on-surface">Set Up 4-Digit Transfer PIN</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSetupPinModalOpen(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-on-surface-variant">
+              To protect your account against unauthorized transactions, create a 4-digit transfer PIN.
+              Avoid repeated digits (0000) or simple sequences (1234).
+            </p>
+
+            {setupPinError && (
+              <div className="p-3 bg-error-container text-on-error-container rounded-xl text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-error shrink-0" />
+                <span>{setupPinError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveInitialPin} className="space-y-3.5">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-on-surface" htmlFor="newPinInput">
+                  4-Digit PIN *
+                </label>
+                <input
+                  id="newPinInput"
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={setupPin}
+                  onChange={(e) => setSetupPin(e.target.value.replace(/\D/g, ''))}
+                  placeholder="••••"
+                  required
+                  className="w-full h-11 px-3.5 text-center text-xl tracking-widest bg-surface-container-low rounded-xl text-on-surface border border-outline-variant/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-on-surface" htmlFor="confirmPinInput">
+                  Confirm 4-Digit PIN *
+                </label>
+                <input
+                  id="confirmPinInput"
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={setupConfirmPin}
+                  onChange={(e) => setSetupConfirmPin(e.target.value.replace(/\D/g, ''))}
+                  placeholder="••••"
+                  required
+                  className="w-full h-11 px-3.5 text-center text-xl tracking-widest bg-surface-container-low rounded-xl text-on-surface border border-outline-variant/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsSetupPinModalOpen(false)}
+                  className="h-11 rounded-xl bg-surface-container text-xs font-semibold text-on-surface hover:bg-surface-container-high"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingPin || setupPin.length !== 4 || setupConfirmPin.length !== 4}
+                  className="h-11 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {isSavingPin ? (
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <span>Save Transfer PIN</span>
+                      <Check className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= FORGOT PIN RESET MODAL ================= */}
+      {isResetPinModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-surface-container-lowest max-w-md w-full rounded-2xl p-6 shadow-2xl relative overflow-hidden flex flex-col gap-4 border border-outline-variant/30">
+            <div className="flex items-center justify-between pb-2 border-b border-outline-variant/20">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-secondary-container/40 text-tertiary flex items-center justify-center">
+                  <Shield className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold text-on-surface">Reset Transfer PIN</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsResetPinModalOpen(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-on-surface-variant">
+              Confirm your account password to authorize resetting your 4-digit transfer PIN.
+            </p>
+
+            {resetPinError && (
+              <div className="p-3 bg-error-container text-on-error-container rounded-xl text-xs font-semibold flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-error shrink-0" />
+                <span>{resetPinError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleResetPinSubmit} className="space-y-3.5">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-on-surface" htmlFor="resetPwd">
+                  Account Password *
+                </label>
+                <input
+                  id="resetPwd"
+                  type="password"
+                  value={resetPassword}
+                  onChange={(e) => setResetPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  required
+                  className="w-full h-11 px-3.5 bg-surface-container-low rounded-xl text-sm text-on-surface border border-outline-variant/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-on-surface" htmlFor="resetNewPin">
+                    New 4-Digit PIN *
+                  </label>
+                  <input
+                    id="resetNewPin"
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={resetNewPin}
+                    onChange={(e) => setResetNewPin(e.target.value.replace(/\D/g, ''))}
+                    placeholder="••••"
+                    required
+                    className="w-full h-11 px-3.5 text-center text-lg tracking-widest bg-surface-container-low rounded-xl text-on-surface border border-outline-variant/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-on-surface" htmlFor="resetConfirmPin">
+                    Confirm PIN *
+                  </label>
+                  <input
+                    id="resetConfirmPin"
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={resetConfirmPin}
+                    onChange={(e) => setResetConfirmPin(e.target.value.replace(/\D/g, ''))}
+                    placeholder="••••"
+                    required
+                    className="w-full h-11 px-3.5 text-center text-lg tracking-widest bg-surface-container-low rounded-xl text-on-surface border border-outline-variant/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsResetPinModalOpen(false)}
+                  className="h-11 rounded-xl bg-surface-container text-xs font-semibold text-on-surface hover:bg-surface-container-high"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isResettingPin || !resetPassword || resetNewPin.length !== 4}
+                  className="h-11 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {isResettingPin ? (
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <span>Reset PIN</span>
+                      <Check className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= SUCCESS MODAL ================= */}
       {successData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
           <div className="bg-surface-container-lowest max-w-md w-full rounded-2xl p-6 sm:p-7 shadow-2xl relative overflow-hidden flex flex-col gap-5 text-center">
@@ -407,7 +958,7 @@ export const TransferPage: React.FC = () => {
               </span>
               <h3 className="text-xl font-bold text-on-surface mt-1">Funds Sent Successfully</h3>
               <p className="text-xs text-on-surface-variant mt-1">
-                Your atomic transfer has cleared immediately on the institutional ledger.
+                Your transfer has cleared immediately on the institutional ledger.
               </p>
             </div>
 

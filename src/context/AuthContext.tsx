@@ -10,14 +10,17 @@ import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
   User as FirebaseUser,
 } from 'firebase/auth';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured, isMockEnabled, getSecondaryAuth } from '../services/firebase';
 import { deriveAuthEmail, extractUsername, AUTH_EMAIL_DOMAIN } from '../config/brand';
 import { UserProfile, UserRole, UserStatus, SignUpFormData } from '../types';
 import { mockStorage } from '../services/mockStorage';
 import { createNewCustomerAccount } from '../services/banking';
+import { hashPin, isWeakPin } from '../utils/pin';
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -31,6 +34,9 @@ interface AuthContextType {
   login: (username: string, password: string) => Promise<{ success: boolean; role: UserRole; error?: string }>;
   signUp: (formData: SignUpFormData) => Promise<{ success: boolean; accountNumber: string; error?: string }>;
   updateProfile: (updates: Partial<Pick<UserProfile, 'email' | 'phone' | 'address'>>) => Promise<{ success: boolean; error?: string }>;
+  setTransferPin: (newPin: string) => Promise<{ success: boolean; error?: string }>;
+  changeTransferPin: (currentPin: string, newPin: string) => Promise<{ success: boolean; error?: string }>;
+  resetTransferPinWithPassword: (password: string, newPin: string) => Promise<{ success: boolean; error?: string }>;
   logout: (isTimeout?: boolean) => Promise<void>;
   closeSessionExpiredModal: () => void;
   clearError: () => void;
@@ -66,6 +72,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setFirebaseUser(null);
     localStorage.removeItem('emprise_mock_active_uid');
+
+    // Purge draft state and PIN failure lockouts on logout
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('emprise:draft:') || k.startsWith('emprise:pinfail:'))) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+    } catch (storageErr) {
+      console.warn('Error clearing drafts and lockouts on logout:', storageErr);
+    }
 
     if (isTimeout) {
       setIsSessionExpiredModalOpen(true);
@@ -385,6 +405,156 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // Set 4-digit transfer PIN
+  const setTransferPin = async (newPin: string): Promise<{ success: boolean; error?: string }> => {
+    if (!user) {
+      return { success: false, error: 'No active session. Please sign in.' };
+    }
+    const cleanPin = newPin.trim();
+    if (cleanPin.length !== 4 || !/^\d{4}$/.test(cleanPin)) {
+      return { success: false, error: 'PIN must be exactly 4 numeric digits.' };
+    }
+    if (isWeakPin(cleanPin)) {
+      return { success: false, error: 'PIN is too simple. Avoid repeated digits (like 1111) or sequences (like 1234).' };
+    }
+
+    try {
+      const pinHash = await hashPin(cleanPin, user.uid);
+      if (isFirebaseConfigured() && db) {
+        await setDoc(doc(db, 'pins', user.uid), {
+          hash: pinHash,
+          updatedAt: serverTimestamp(),
+        });
+        await updateDoc(doc(db, 'users', user.uid), {
+          hasPin: true,
+        });
+      } else if (isMockEnabled) {
+        mockStorage.setPinHash(user.uid, pinHash);
+      } else {
+        return { success: false, error: 'Storage connection unavailable.' };
+      }
+
+      setUser((prev) => (prev ? { ...prev, hasPin: true } : null));
+      localStorage.removeItem(`emprise:pinfail:${user.uid}`);
+      return { success: true };
+    } catch (err: any) {
+      console.error('Failed to set transfer PIN:', err);
+      return { success: false, error: err.message || 'Failed to save transfer PIN.' };
+    }
+  };
+
+  // Change 4-digit transfer PIN verifying current PIN
+  const changeTransferPin = async (
+    currentPin: string,
+    newPin: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!user) {
+      return { success: false, error: 'No active session. Please sign in.' };
+    }
+    const cleanCurr = currentPin.trim();
+    const cleanNew = newPin.trim();
+
+    if (cleanCurr.length !== 4 || !/^\d{4}$/.test(cleanCurr)) {
+      return { success: false, error: 'Current PIN must be 4 digits.' };
+    }
+    if (cleanNew.length !== 4 || !/^\d{4}$/.test(cleanNew)) {
+      return { success: false, error: 'New PIN must be 4 digits.' };
+    }
+    if (isWeakPin(cleanNew)) {
+      return { success: false, error: 'New PIN is too simple. Avoid repeated digits or straight sequences.' };
+    }
+
+    try {
+      const currentHash = await hashPin(cleanCurr, user.uid);
+      const newHash = await hashPin(cleanNew, user.uid);
+
+      if (isFirebaseConfigured() && db) {
+        const pinDoc = await getDoc(doc(db, 'pins', user.uid));
+        if (!pinDoc.exists() || pinDoc.data()?.hash !== currentHash) {
+          return { success: false, error: 'Incorrect current PIN.' };
+        }
+        await setDoc(doc(db, 'pins', user.uid), {
+          hash: newHash,
+          updatedAt: serverTimestamp(),
+        });
+        await updateDoc(doc(db, 'users', user.uid), {
+          hasPin: true,
+        });
+      } else if (isMockEnabled) {
+        const storedHash = mockStorage.getPinHash(user.uid);
+        if (storedHash && storedHash !== currentHash) {
+          return { success: false, error: 'Incorrect current PIN.' };
+        }
+        mockStorage.setPinHash(user.uid, newHash);
+      } else {
+        return { success: false, error: 'Storage connection unavailable.' };
+      }
+
+      setUser((prev) => (prev ? { ...prev, hasPin: true } : null));
+      localStorage.removeItem(`emprise:pinfail:${user.uid}`);
+      return { success: true };
+    } catch (err: any) {
+      console.error('Failed to change transfer PIN:', err);
+      return { success: false, error: err.message || 'Failed to change transfer PIN.' };
+    }
+  };
+
+  // Reset transfer PIN using account password verification
+  const resetTransferPinWithPassword = async (
+    password: string,
+    newPin: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!user) {
+      return { success: false, error: 'No active session. Please sign in.' };
+    }
+    if (!password) {
+      return { success: false, error: 'Account password is required for security verification.' };
+    }
+    const cleanNew = newPin.trim();
+    if (cleanNew.length !== 4 || !/^\d{4}$/.test(cleanNew)) {
+      return { success: false, error: 'New PIN must be 4 digits.' };
+    }
+    if (isWeakPin(cleanNew)) {
+      return { success: false, error: 'New PIN is too simple. Avoid repeated digits or straight sequences.' };
+    }
+
+    try {
+      if (isFirebaseConfigured() && auth && auth.currentUser && db) {
+        const derivedEmail = deriveAuthEmail(user.username);
+        const cred = EmailAuthProvider.credential(derivedEmail, password);
+        try {
+          await reauthenticateWithCredential(auth.currentUser, cred);
+        } catch {
+          return { success: false, error: 'Incorrect password. Verification failed.' };
+        }
+
+        const newHash = await hashPin(cleanNew, user.uid);
+        await setDoc(doc(db, 'pins', user.uid), {
+          hash: newHash,
+          updatedAt: serverTimestamp(),
+        });
+        await updateDoc(doc(db, 'users', user.uid), {
+          hasPin: true,
+        });
+      } else if (isMockEnabled) {
+        if (password.length < 6) {
+          return { success: false, error: 'Incorrect password. Verification failed.' };
+        }
+        const newHash = await hashPin(cleanNew, user.uid);
+        mockStorage.setPinHash(user.uid, newHash);
+      } else {
+        return { success: false, error: 'Storage connection unavailable.' };
+      }
+
+      setUser((prev) => (prev ? { ...prev, hasPin: true } : null));
+      localStorage.removeItem(`emprise:pinfail:${user.uid}`);
+      return { success: true };
+    } catch (err: any) {
+      console.error('Failed to reset transfer PIN with password:', err);
+      return { success: false, error: err.message || 'Failed to reset transfer PIN.' };
+    }
+  };
+
   const closeSessionExpiredModal = () => {
     setIsSessionExpiredModalOpen(false);
   };
@@ -403,6 +573,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         signUp,
         updateProfile,
+        setTransferPin,
+        changeTransferPin,
+        resetTransferPinWithPassword,
         logout,
         closeSessionExpiredModal,
         clearError,

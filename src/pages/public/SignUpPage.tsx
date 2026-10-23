@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Logo } from '../../components/common/Logo';
@@ -25,29 +25,44 @@ import {
   EyeOff,
   Copy,
 } from 'lucide-react';
+import { useDraftState } from '../../hooks/useDraftState';
+
+type SignUpSafeDraft = Omit<SignUpFormData, 'password' | 'govId'>;
 
 export const SignUpPage: React.FC = () => {
   const { signUp, isFirebaseActive } = useAuth();
   const navigate = useNavigate();
 
+  const [draftData, setDraftData, clearSignUpDraft] = useDraftState<SignUpSafeDraft | null>(
+    null,
+    'signup_form',
+    null
+  );
+
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
-  const [formData, setFormData] = useState<SignUpFormData>({
-    firstName: '',
-    lastName: '',
-    dob: '',
-    isOver18: true,
-    contactEmail: '',
-    phone: '',
-    street: '',
-    apt: '',
-    city: '',
-    state: 'IL',
-    zip: '',
-    govId: '',
-    username: '',
-    password: '',
-    accountType: 'Checking',
-  });
+  const [formData, setFormData] = useState<SignUpFormData>(() => ({
+    firstName: draftData?.firstName || '',
+    lastName: draftData?.lastName || '',
+    dob: draftData?.dob || '',
+    isOver18: draftData?.isOver18 ?? true,
+    contactEmail: draftData?.contactEmail || '',
+    phone: draftData?.phone || '',
+    street: draftData?.street || '',
+    apt: draftData?.apt || '',
+    city: draftData?.city || '',
+    state: draftData?.state || 'IL',
+    zip: draftData?.zip || '',
+    govId: '', // NEVER draft or persist govId
+    username: draftData?.username || '',
+    password: '', // NEVER draft or persist password
+    accountType: draftData?.accountType || 'Checking',
+  }));
+
+  // Sync non-sensitive form fields to debounced draft
+  useEffect(() => {
+    const { password, govId, ...safeDraft } = formData;
+    setDraftData(safeDraft);
+  }, [formData, setDraftData]);
 
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -146,6 +161,7 @@ export const SignUpPage: React.FC = () => {
     setIsSubmitting(false);
 
     if (result.success) {
+      clearSignUpDraft();
       setCreatedAccountNumber(result.accountNumber);
       setCurrentStep(4); // Success step!
     } else {
@@ -352,7 +368,11 @@ export const SignUpPage: React.FC = () => {
 
             {/* Action buttons */}
             <div className="pt-3 border-t border-outline-variant/20 flex items-center justify-between gap-3">
-              <Link to="/" className="text-xs font-semibold text-on-surface-variant hover:text-on-surface">
+              <Link
+                to="/"
+                onClick={() => clearSignUpDraft()}
+                className="text-xs font-semibold text-on-surface-variant hover:text-on-surface"
+              >
                 Cancel
               </Link>
               <button

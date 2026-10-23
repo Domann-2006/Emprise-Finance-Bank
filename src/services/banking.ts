@@ -16,6 +16,7 @@ import {
   writeBatch,
   serverTimestamp,
   onSnapshot,
+  increment,
   Firestore,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured, isMockEnabled } from './firebase';
@@ -29,6 +30,7 @@ import {
   AccountType,
 } from '../types';
 import { generateAccountNumber } from '../utils/format';
+import { hashPin } from '../utils/pin';
 
 /**
  * Generates a verified unique 10-digit account number by checking accountDirectory first
@@ -115,6 +117,7 @@ export async function createNewCustomerAccount(
     accountNumber,
     accountId,
     ownerName: userDoc.name,
+    ownerUid: uid,
     status: 'active',
   };
 
@@ -208,6 +211,7 @@ export async function adminCreateCustomerAccount(params: {
     accountNumber,
     accountId,
     ownerName: userDoc.name,
+    ownerUid: uid,
     status: 'active',
   };
 
@@ -383,9 +387,10 @@ export function listenToTransactions(
 }
 
 /**
- * Executes an atomic transfer using Firestore runTransaction.
- * All document reads (dirSnap, senderSnap, recipientSnap, senderUserSnap)
- * execute strictly before any updates or sets.
+ * Executes an atomic transfer using Firestore runTransaction with PIN verification proof.
+ * All document reads (dirSnap, senderSnap, senderUserSnap) execute strictly before any updates or sets.
+ * Crucially, recipient's account doc is NOT read (avoiding permission-denied under owner-read security rules)
+ * and recipient's balance is updated via increment(amountCents).
  */
 export async function executeTransferTransaction(params: {
   senderAccountId: string;
@@ -393,13 +398,14 @@ export async function executeTransferTransaction(params: {
   recipientAccountNumber: string;
   amountCents: number;
   note: string;
+  pin: string;
 }): Promise<{ senderNewBalanceCents: number; recipientName: string }> {
-  const { senderAccountId, senderUid, recipientAccountNumber, amountCents, note } = params;
+  const { senderAccountId, senderUid, recipientAccountNumber, amountCents, note, pin } = params;
 
   const activeDb = db;
   if (!isFirebaseConfigured() || !activeDb) {
     if (isMockEnabled) {
-      const result = mockStorage.executeTransfer(params);
+      const result = await mockStorage.executeTransfer(params);
       window.dispatchEvent(new Event('emprise_storage_updated'));
       return result;
     }
@@ -407,125 +413,142 @@ export async function executeTransferTransaction(params: {
   }
 
   const cleanRecipientAcct = recipientAccountNumber.trim();
+  const pinHash = await hashPin(pin, senderUid);
 
-  return await runTransaction(activeDb, async (transaction) => {
-    // -------------------------------------------------------------
-    // PHASE 1: ALL READS (Must execute before any update/set)
-    // -------------------------------------------------------------
-    // 1. Read recipient directory entry
-    const dirRef = doc(activeDb, 'accountDirectory', cleanRecipientAcct);
-    const dirSnap = await transaction.get(dirRef);
+  try {
+    return await runTransaction(activeDb, async (transaction) => {
+      // -------------------------------------------------------------
+      // PHASE 1: ALL READS (Must execute before any update/set)
+      // -------------------------------------------------------------
+      // 1. Read recipient directory entry
+      const dirRef = doc(activeDb, 'accountDirectory', cleanRecipientAcct);
+      const dirSnap = await transaction.get(dirRef);
 
-    if (!dirSnap.exists()) {
-      throw new Error('Recipient account number could not be found.');
-    }
+      if (!dirSnap.exists()) {
+        throw new Error('Recipient account number could not be found.');
+      }
 
-    const dirData = dirSnap.data() as AccountDirectoryEntry;
-    if (dirData.status !== 'active') {
-      throw new Error('Recipient account is currently disabled or closed.');
-    }
+      const dirData = dirSnap.data() as AccountDirectoryEntry;
+      if (dirData.status !== 'active') {
+        throw new Error('Recipient account is currently disabled or closed.');
+      }
 
-    // 2. Read sender account
-    const senderRef = doc(activeDb, 'accounts', senderAccountId);
-    const senderSnap = await transaction.get(senderRef);
+      // 2. Read sender account (Only owner can read this account)
+      const senderRef = doc(activeDb, 'accounts', senderAccountId);
+      const senderSnap = await transaction.get(senderRef);
 
-    if (!senderSnap.exists()) {
-      throw new Error('Sender account not found.');
-    }
+      if (!senderSnap.exists()) {
+        throw new Error('Sender account not found.');
+      }
 
-    const senderData = senderSnap.data() as BankAccount;
-    if (senderData.ownerUid !== senderUid) {
-      throw new Error('Unauthorized transfer request.');
-    }
-    if (senderData.status !== 'active') {
-      throw new Error('Your account is currently inactive.');
-    }
-    if (senderData.accountNumber === cleanRecipientAcct) {
-      throw new Error('Self-transfer is not permitted.');
-    }
+      const senderData = senderSnap.data() as BankAccount;
+      if (senderData.ownerUid !== senderUid) {
+        throw new Error('Unauthorized transfer request.');
+      }
+      if (senderData.status !== 'active') {
+        throw new Error('Your account is currently inactive.');
+      }
+      if (senderData.accountNumber === cleanRecipientAcct) {
+        throw new Error('Self-transfer is not permitted.');
+      }
 
-    if (senderData.balanceCents < amountCents) {
-      throw new Error(
-        `Insufficient funds. Your available balance is $${(senderData.balanceCents / 100).toFixed(2)}.`
-      );
-    }
+      if (senderData.balanceCents < amountCents) {
+        throw new Error(
+          `Insufficient funds. Your available balance is $${(senderData.balanceCents / 100).toFixed(2)}.`
+        );
+      }
 
-    // 3. Read recipient account
-    const recipientRef = doc(activeDb, 'accounts', dirData.accountId);
-    const recipientSnap = await transaction.get(recipientRef);
+      // 3. Read sender user doc (BEFORE any writes) to resolve counterparty name
+      const senderUserRef = doc(activeDb, 'users', senderUid);
+      const senderUserSnap = await transaction.get(senderUserRef);
+      const senderName = senderUserSnap.exists()
+        ? (senderUserSnap.data() as UserProfile).name
+        : 'Emprise Member';
 
-    if (!recipientSnap.exists()) {
-      throw new Error('Recipient account details not found.');
-    }
-    const recipientData = recipientSnap.data() as BankAccount;
-    if (recipientData.status !== 'active') {
-      throw new Error('Recipient account is currently not active.');
-    }
+      // NOTE: We do NOT read recipient's account doc.
+      // Under Firestore security rules, customers can only read their own account doc.
+      // Recipient's balance is incremented atomically in Phase 3.
 
-    // 4. Read sender user doc (BEFORE any writes!) to resolve counterparty name
-    const senderUserRef = doc(activeDb, 'users', senderUid);
-    const senderUserSnap = await transaction.get(senderUserRef);
-    const senderName = senderUserSnap.exists()
-      ? (senderUserSnap.data() as UserProfile).name
-      : 'Emprise Member';
+      // -------------------------------------------------------------
+      // PHASE 2: CALCULATIONS & REFERENCES
+      // -------------------------------------------------------------
+      const senderNewBalanceCents = senderData.balanceCents - amountCents;
 
-    // -------------------------------------------------------------
-    // PHASE 2: CALCULATIONS & REFERENCES
-    // -------------------------------------------------------------
-    const senderNewBalanceCents = senderData.balanceCents - amountCents;
-    const recipientNewBalanceCents = recipientData.balanceCents + amountCents;
+      const senderTxRef = doc(collection(activeDb, 'transactions'));
+      const recipientTxRef = doc(collection(activeDb, 'transactions'));
+      const pinProofRef = doc(activeDb, 'pinProofs', senderTxRef.id);
+      const recipientAccountRef = doc(activeDb, 'accounts', dirData.accountId);
 
-    const senderTxRef = doc(collection(activeDb, 'transactions'));
-    const recipientTxRef = doc(collection(activeDb, 'transactions'));
+      // Debit transaction for sender
+      const senderTx: TransactionRecord = {
+        id: senderTxRef.id,
+        accountId: senderData.id,
+        ownerUid: senderData.ownerUid,
+        type: 'debit',
+        amountCents,
+        counterpartyName: dirData.ownerName,
+        counterpartyAccount: cleanRecipientAcct,
+        note: note.trim() || 'Direct Account Transfer',
+        balanceAfterCents: senderNewBalanceCents,
+        linkedTransactionId: recipientTxRef.id,
+        status: 'cleared',
+        createdAt: serverTimestamp(),
+      };
 
-    const senderTx: Omit<TransactionRecord, 'id'> = {
-      accountId: senderData.id,
-      ownerUid: senderData.ownerUid,
-      type: 'debit',
-      amountCents,
-      counterpartyName: dirData.ownerName,
-      counterpartyAccount: cleanRecipientAcct,
-      note: note.trim() || 'Direct Account Transfer',
-      balanceAfterCents: senderNewBalanceCents,
-      status: 'cleared',
-      createdAt: serverTimestamp(),
-    };
+      // Credit transaction for recipient (balanceAfterCents is omitted because recipient balance is not read)
+      const recipientTx: Omit<TransactionRecord, 'balanceAfterCents'> = {
+        id: recipientTxRef.id,
+        accountId: dirData.accountId,
+        ownerUid: dirData.ownerUid,
+        type: 'credit',
+        amountCents,
+        counterpartyName: senderName,
+        counterpartyAccount: senderData.accountNumber,
+        note: note.trim() || 'Incoming Transfer',
+        linkedTransactionId: senderTxRef.id,
+        status: 'cleared',
+        createdAt: serverTimestamp(),
+      };
 
-    const recipientTx: Omit<TransactionRecord, 'id'> = {
-      accountId: recipientData.id,
-      ownerUid: recipientData.ownerUid,
-      type: 'credit',
-      amountCents,
-      counterpartyName: senderName,
-      counterpartyAccount: senderData.accountNumber,
-      note: note.trim() || 'Incoming Transfer',
-      balanceAfterCents: recipientNewBalanceCents,
-      status: 'cleared',
-      createdAt: serverTimestamp(),
-    };
+      // -------------------------------------------------------------
+      // PHASE 3: ALL WRITES
+      // -------------------------------------------------------------
+      // 1. Update sender account with new balance and link to debit transaction ID
+      transaction.update(senderRef, {
+        balanceCents: senderNewBalanceCents,
+        lastTransactionId: senderTxRef.id,
+      });
 
-    // -------------------------------------------------------------
-    // PHASE 3: ALL WRITES
-    // -------------------------------------------------------------
-    // Update balances and link to transaction ID for security rule verification
-    transaction.update(senderRef, {
-      balanceCents: senderNewBalanceCents,
-      lastTransactionId: senderTxRef.id,
+      // 2. Increment recipient account balance atomically and link to credit transaction ID
+      transaction.update(recipientAccountRef, {
+        balanceCents: increment(amountCents),
+        lastTransactionId: recipientTxRef.id,
+      });
+
+      // 3. Commit transactions
+      transaction.set(senderTxRef, senderTx);
+      transaction.set(recipientTxRef, recipientTx);
+
+      // 4. Commit PIN Proof linking senderUid, hash, and senderTxRef.id
+      transaction.set(pinProofRef, {
+        uid: senderUid,
+        hash: pinHash,
+        createdAt: serverTimestamp(),
+      });
+
+      return {
+        senderNewBalanceCents,
+        recipientName: dirData.ownerName,
+      };
     });
-    transaction.update(recipientRef, {
-      balanceCents: recipientNewBalanceCents,
-      lastTransactionId: recipientTxRef.id,
-    });
-
-    // Write the two transaction documents
-    transaction.set(senderTxRef, senderTx);
-    transaction.set(recipientTxRef, recipientTx);
-
-    return {
-      senderNewBalanceCents,
-      recipientName: dirData.ownerName,
-    };
-  });
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      const pinError: any = new Error('Transfer authorization failed. Incorrect PIN or insufficient permission.');
+      pinError.code = 'PIN_OR_PERMISSION';
+      throw pinError;
+    }
+    throw err;
+  }
 }
 
 /**

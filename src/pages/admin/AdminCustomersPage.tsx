@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { mockStorage } from '../../services/mockStorage';
 import { isFirebaseConfigured, isMockEnabled, db } from '../../services/firebase';
-import { collection, getDocs, doc, setDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where } from 'firebase/firestore';
 import { UserProfile, BankAccount } from '../../types';
 import { formatCentsToUSD, maskAccountNumber, parseUSDToCents } from '../../utils/format';
 import { UserStatusBadge } from '../../components/common/StatusBadge';
@@ -25,6 +25,7 @@ import {
   MinusCircle,
   HelpCircle,
   Users,
+  RotateCcw,
 } from 'lucide-react';
 
 export const AdminCustomersPage: React.FC = () => {
@@ -222,6 +223,25 @@ export const AdminCustomersPage: React.FC = () => {
     }
   };
 
+  // Reset Customer Transfer PIN
+  const handleResetCustomerPin = async (customer: UserProfile) => {
+    try {
+      if (isFirebaseConfigured() && db) {
+        await deleteDoc(doc(db, 'pins', customer.uid));
+        await updateDoc(doc(db, 'users', customer.uid), { hasPin: false });
+      } else if (isMockEnabled) {
+        mockStorage.deletePin(customer.uid);
+      }
+      setUsers((prev) =>
+        prev.map((u) => (u.uid === customer.uid ? { ...u, hasPin: false } : u))
+      );
+      triggerToast(`Transfer PIN reset for ${customer.name}.`);
+    } catch (err: any) {
+      console.error('Failed to reset customer PIN:', err);
+      triggerToast(`Error resetting PIN: ${err.message}`);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6 max-w-5xl mx-auto w-full animate-fade-in">
       {/* Toast */}
@@ -326,6 +346,15 @@ export const AdminCustomersPage: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <h3 className="text-base font-bold text-on-surface truncate">{customer.name}</h3>
                         <UserStatusBadge status={customer.status} />
+                        {customer.hasPin ? (
+                          <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-bold">
+                            PIN Set
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant text-[10px]">
+                            No PIN
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-on-surface-variant font-mono truncate">
                         @{customer.username} • {customer.email}
@@ -369,8 +398,8 @@ export const AdminCustomersPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Actions Grid (Edit Balance, Enable/Disable, Delete, Reset PW) */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-outline-variant/20 text-xs">
+                {/* Actions Grid (Edit Balance, Enable/Disable, Reset Transfer PIN, Reset PW, Delete) */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 border-t border-outline-variant/20 text-xs">
                   {/* 1. Edit Balance */}
                   <button
                     onClick={() => openBalanceModal(customer)}
@@ -391,7 +420,19 @@ export const AdminCustomersPage: React.FC = () => {
                     <span>{customer.status === 'active' ? 'Disable' : 'Enable'}</span>
                   </button>
 
-                  {/* 3. Reset PW (Strictly per instruction: "Reset PW shown as disabled with 'Needs Cloud Functions'. The client SDK can't reset another user's password.") */}
+                  {/* 3. Reset Transfer PIN */}
+                  <button
+                    type="button"
+                    onClick={() => handleResetCustomerPin(customer)}
+                    disabled={!customer.hasPin || customer.status === 'closed'}
+                    className="h-10 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold flex items-center justify-center gap-1.5 transition-all disabled:opacity-40"
+                    title={customer.hasPin ? 'Reset customer 4-digit transfer PIN' : 'Customer has not configured a transfer PIN'}
+                  >
+                    <RotateCcw className="w-4 h-4 text-primary" />
+                    <span>Reset PIN</span>
+                  </button>
+
+                  {/* 4. Reset PW (Strictly per instruction: "Reset PW shown as disabled with 'Needs Cloud Functions'. The client SDK can't reset another user's password.") */}
                   <div className="relative group">
                     <button
                       type="button"
@@ -407,7 +448,7 @@ export const AdminCustomersPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* 4. Delete (Soft delete, status "closed") */}
+                  {/* 5. Delete (Soft delete, status "closed") */}
                   <button
                     onClick={() => setDeleteWarningUser(customer)}
                     disabled={customer.status === 'closed'}

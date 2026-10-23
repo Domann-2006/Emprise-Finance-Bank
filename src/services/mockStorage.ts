@@ -6,6 +6,7 @@
 
 import { UserProfile, BankAccount, AccountDirectoryEntry, TransactionRecord, SignUpFormData } from '../types';
 import { generateAccountNumber } from '../utils/format';
+import { hashPin } from '../utils/pin';
 
 const STORAGE_USERS_KEY = 'emprise_users_v1';
 const STORAGE_ACCOUNTS_KEY = 'emprise_accounts_v1';
@@ -114,11 +115,13 @@ const INITIAL_ACCOUNTS: BankAccount[] = [
   },
 ];
 
+const STORAGE_PINS_KEY = 'emprise_mock_pins_v1';
+
 const INITIAL_DIRECTORY: Record<string, AccountDirectoryEntry> = {
-  '4829108421': { accountNumber: '4829108421', accountId: 'acct-elena-1', ownerName: 'Elena Vance', status: 'active' },
-  '4829104829': { accountNumber: '4829104829', accountId: 'acct-alex-1', ownerName: 'Alex Rivera', status: 'active' },
-  '4829103309': { accountNumber: '4829103309', accountId: 'acct-marcus-1', ownerName: 'Marcus Vance', status: 'active' },
-  '4829105512': { accountNumber: '4829105512', accountId: 'acct-sarah-1', ownerName: 'Sarah Jenkins', status: 'disabled' },
+  '4829108421': { accountNumber: '4829108421', accountId: 'acct-elena-1', ownerName: 'Elena Vance', ownerUid: 'user-elena-1', status: 'active' },
+  '4829104829': { accountNumber: '4829104829', accountId: 'acct-alex-1', ownerName: 'Alex Rivera', ownerUid: 'user-alex-1', status: 'active' },
+  '4829103309': { accountNumber: '4829103309', accountId: 'acct-marcus-1', ownerName: 'Marcus Vance', ownerUid: 'user-marcus-1', status: 'active' },
+  '4829105512': { accountNumber: '4829105512', accountId: 'acct-sarah-1', ownerName: 'Sarah Jenkins', ownerUid: 'user-sarah-1', status: 'disabled' },
 };
 
 const INITIAL_TRANSACTIONS: TransactionRecord[] = [
@@ -194,6 +197,7 @@ class MockStorageService {
   private accounts: BankAccount[] = [];
   private directory: Record<string, AccountDirectoryEntry> = {};
   private transactions: TransactionRecord[] = [];
+  private pins: Record<string, string> = {}; // uid -> pinHash
 
   constructor() {
     this.loadState();
@@ -212,11 +216,15 @@ class MockStorageService {
 
       const storedTxns = localStorage.getItem(STORAGE_TRANSACTIONS_KEY);
       this.transactions = storedTxns ? JSON.parse(storedTxns) : [...INITIAL_TRANSACTIONS];
+
+      const storedPins = localStorage.getItem(STORAGE_PINS_KEY);
+      this.pins = storedPins ? JSON.parse(storedPins) : {};
     } catch {
       this.users = [...INITIAL_USERS];
       this.accounts = [...INITIAL_ACCOUNTS];
       this.directory = { ...INITIAL_DIRECTORY };
       this.transactions = [...INITIAL_TRANSACTIONS];
+      this.pins = {};
     }
   }
 
@@ -226,9 +234,32 @@ class MockStorageService {
       localStorage.setItem(STORAGE_ACCOUNTS_KEY, JSON.stringify(this.accounts));
       localStorage.setItem(STORAGE_DIRECTORY_KEY, JSON.stringify(this.directory));
       localStorage.setItem(STORAGE_TRANSACTIONS_KEY, JSON.stringify(this.transactions));
+      localStorage.setItem(STORAGE_PINS_KEY, JSON.stringify(this.pins));
     } catch (e) {
       console.warn('Unable to persist mock state to localStorage:', e);
     }
+  }
+
+  setPinHash(uid: string, hash: string) {
+    this.pins[uid] = hash;
+    const user = this.users.find((u) => u.uid === uid);
+    if (user) {
+      user.hasPin = true;
+    }
+    this.saveState();
+  }
+
+  getPinHash(uid: string): string | null {
+    return this.pins[uid] || null;
+  }
+
+  deletePin(uid: string) {
+    delete this.pins[uid];
+    const user = this.users.find((u) => u.uid === uid);
+    if (user) {
+      user.hasPin = false;
+    }
+    this.saveState();
   }
 
   getUsers(): UserProfile[] {
@@ -318,6 +349,7 @@ class MockStorageService {
       accountNumber: newAccountNumber,
       accountId,
       ownerName: user.name,
+      ownerUid: uid,
       status: 'active',
     };
 
@@ -371,6 +403,7 @@ class MockStorageService {
       accountNumber: newAccountNumber,
       accountId,
       ownerName: user.name,
+      ownerUid: uid,
       status: 'active',
     };
 
@@ -440,17 +473,28 @@ class MockStorageService {
     return { newBalanceCents: account.balanceCents };
   }
 
-  executeTransfer(params: {
+  async executeTransfer(params: {
     senderAccountId: string;
     senderUid: string;
     recipientAccountNumber: string;
     amountCents: number;
     note: string;
-  }): { senderNewBalanceCents: number; recipientName: string } {
-    const { senderAccountId, senderUid, recipientAccountNumber, amountCents, note } = params;
+    pin: string;
+  }): Promise<{ senderNewBalanceCents: number; recipientName: string }> {
+    const { senderAccountId, senderUid, recipientAccountNumber, amountCents, note, pin } = params;
 
     if (amountCents <= 0) {
       throw new Error('Transfer amount must be greater than zero.');
+    }
+
+    // Verify PIN if sender has configured a PIN
+    const senderUser = this.users.find(u => u.uid === senderUid);
+    const storedHash = this.getPinHash(senderUid);
+    if (senderUser?.hasPin && storedHash) {
+      const computedHash = await hashPin(pin, senderUid);
+      if (storedHash !== computedHash) {
+        throw new Error('Incorrect PIN.');
+      }
     }
 
     const senderAccount = this.accounts.find(a => a.id === senderAccountId);
@@ -481,13 +525,15 @@ class MockStorageService {
     senderAccount.balanceCents -= amountCents;
     recipientAccount.balanceCents += amountCents;
 
-    const senderUser = this.users.find(u => u.uid === senderUid);
     const senderName = senderUser?.name || 'Emprise Member';
     const now = new Date().toISOString();
 
+    const senderTxId = 'tx_deb_' + Math.random().toString(36).substring(2, 9);
+    const recipientTxId = 'tx_crd_' + Math.random().toString(36).substring(2, 9);
+
     // 1. Debit transaction for sender
     this.transactions.push({
-      id: 'tx_deb_' + Math.random().toString(36).substring(2, 9),
+      id: senderTxId,
       accountId: senderAccount.id,
       ownerUid: senderAccount.ownerUid,
       type: 'debit',
@@ -496,13 +542,14 @@ class MockStorageService {
       counterpartyAccount: recipientAccount.accountNumber,
       note: note.trim() || 'Direct Account Transfer',
       balanceAfterCents: senderAccount.balanceCents,
+      linkedTransactionId: recipientTxId,
       status: 'cleared',
       createdAt: now,
     });
 
-    // 2. Credit transaction for recipient
+    // 2. Credit transaction for recipient (omit balanceAfterCents per spec)
     this.transactions.push({
-      id: 'tx_crd_' + Math.random().toString(36).substring(2, 9),
+      id: recipientTxId,
       accountId: recipientAccount.id,
       ownerUid: recipientAccount.ownerUid,
       type: 'credit',
@@ -510,7 +557,7 @@ class MockStorageService {
       counterpartyName: senderName,
       counterpartyAccount: senderAccount.accountNumber,
       note: note.trim() || 'Incoming Account Transfer',
-      balanceAfterCents: recipientAccount.balanceCents,
+      linkedTransactionId: senderTxId,
       status: 'cleared',
       createdAt: now,
     });
