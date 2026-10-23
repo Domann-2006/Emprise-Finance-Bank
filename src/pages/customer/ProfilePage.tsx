@@ -32,6 +32,9 @@ import {
 } from 'lucide-react';
 import { isWeakPin } from '../../utils/pin';
 import { useDraftState } from '../../hooks/useDraftState';
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
+import { getFriendlyError, withTimeout, triggerOfflineShake } from '../../utils/errorMessages';
+import { ErrorState } from '../../components/common/ErrorState';
 
 export const ProfilePage: React.FC = () => {
   const {
@@ -43,7 +46,9 @@ export const ProfilePage: React.FC = () => {
     resetTransferPinWithPassword,
   } = useAuth();
   const navigate = useNavigate();
+  const { isOnline } = useOnlineStatus();
   const [account, setAccount] = useState<BankAccount | null>(null);
+  const [accountLoadError, setAccountLoadError] = useState<{ title: string; message: string } | null>(null);
 
   // Profile Edit State
   const [isEditing, setIsEditing] = useState(false);
@@ -123,19 +128,31 @@ export const ProfilePage: React.FC = () => {
     }
   }, [user]);
 
-  useEffect(() => {
+  const loadAccount = async () => {
     if (!user) return;
-    const load = async () => {
-      const acct = await getCustomerAccount(user.uid);
+    setAccountLoadError(null);
+    try {
+      const acct = await withTimeout(getCustomerAccount(user.uid), 10000);
       setAccount(acct);
-    };
-    load();
+    } catch (err) {
+      setAccountLoadError(getFriendlyError(err));
+    }
+  };
+
+  useEffect(() => {
+    loadAccount();
   }, [user]);
 
   const handleSaveProfile = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setProfileError(null);
     setProfileSuccess(null);
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      triggerOfflineShake();
+      setProfileError('Connect to the internet to save changes.');
+      return;
+    }
 
     const errs: typeof fieldErrors = {};
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -215,7 +232,8 @@ export const ProfilePage: React.FC = () => {
         setProfileSuccess(null);
       }, 4000);
     } else {
-      setProfileError(res.error || 'Failed to update profile. Please try again.');
+      const friendly = getFriendlyError(res.error);
+      setProfileError(friendly.message);
     }
   };
 
@@ -415,6 +433,15 @@ export const ProfilePage: React.FC = () => {
         </p>
       </div>
 
+      {/* Account Load Error State */}
+      {accountLoadError && !account && (
+        <ErrorState
+          title={accountLoadError.title}
+          message={accountLoadError.message}
+          onRetry={loadAccount}
+        />
+      )}
+
       {/* Profile Overview Card */}
       <div className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/30 shadow-xs flex flex-col gap-5">
         <div className="flex items-center justify-between pb-4 border-b border-outline-variant/20">
@@ -461,19 +488,25 @@ export const ProfilePage: React.FC = () => {
                 >
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  disabled={isSaving}
-                  onClick={handleSaveProfile}
-                  className="h-9 px-4 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50"
+                <div
+                  onClick={() => {
+                    if (!isOnline) triggerOfflineShake();
+                  }}
                 >
-                  {isSaving ? (
-                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <Check className="w-3.5 h-3.5" />
-                  )}
-                  <span>Save Changes</span>
-                </button>
+                  <button
+                    type="button"
+                    disabled={isSaving || !isOnline}
+                    onClick={handleSaveProfile}
+                    className="h-9 px-4 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    {isSaving ? (
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5" />
+                    )}
+                    <span>Save Changes</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -719,19 +752,31 @@ export const ProfilePage: React.FC = () => {
               >
                 Cancel
               </button>
-              <button
-                type="submit"
-                disabled={isSaving}
-                className="h-11 px-5 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50"
+              <div
+                onClick={() => {
+                  if (!isOnline) triggerOfflineShake();
+                }}
               >
-                {isSaving ? (
-                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <Check className="w-3.5 h-3.5" />
-                )}
-                <span>Save Changes</span>
-              </button>
+                <button
+                  type="submit"
+                  disabled={isSaving || !isOnline}
+                  className="h-11 px-5 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {isSaving ? (
+                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <Check className="w-3.5 h-3.5" />
+                  )}
+                  <span>Save Changes</span>
+                </button>
+              </div>
             </div>
+
+            {!isOnline && (
+              <p className="text-xs text-amber-800 bg-amber-500/10 border border-amber-500/20 rounded-xl p-2.5 text-center font-medium">
+                Connect to the internet to save changes.
+              </p>
+            )}
           </form>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">

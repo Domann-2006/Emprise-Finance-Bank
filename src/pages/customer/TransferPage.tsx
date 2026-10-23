@@ -10,6 +10,9 @@ import { BankAccount, AccountDirectoryEntry } from '../../types';
 import { formatCentsToUSD, maskAccountNumber, parseUSDToCents } from '../../utils/format';
 import { isWeakPin } from '../../utils/pin';
 import { useDraftState } from '../../hooks/useDraftState';
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
+import { getFriendlyError, withTimeout, triggerOfflineShake } from '../../utils/errorMessages';
+import { ErrorState } from '../../components/common/ErrorState';
 import {
   Wallet,
   ArrowRight,
@@ -26,9 +29,12 @@ import {
 
 export const TransferPage: React.FC = () => {
   const { user, setTransferPin, resetTransferPinWithPassword } = useAuth();
+  const { isOnline } = useOnlineStatus();
   const navigate = useNavigate();
 
   const [account, setAccount] = useState<BankAccount | null>(null);
+  const [accountLoadError, setAccountLoadError] = useState<{ title: string; message: string } | null>(null);
+  const [isLoadingAccount, setIsLoadingAccount] = useState(true);
 
   // Draft persistence for form inputs (debounced 300ms, 24h TTL, cleared on transfer success)
   const [recipientAccountNum, setRecipientAccountNum, clearRecipient] = useDraftState(
@@ -79,13 +85,22 @@ export const TransferPage: React.FC = () => {
   } | null>(null);
 
   // Load Customer Account
-  useEffect(() => {
+  const loadAccount = async () => {
     if (!user) return;
-    const load = async () => {
-      const acct = await getCustomerAccount(user.uid);
+    setIsLoadingAccount(true);
+    setAccountLoadError(null);
+    try {
+      const acct = await withTimeout(getCustomerAccount(user.uid), 10000);
       setAccount(acct);
-    };
-    load();
+    } catch (err) {
+      setAccountLoadError(getFriendlyError(err));
+    } finally {
+      setIsLoadingAccount(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAccount();
   }, [user]);
 
   // Lockout timer ticker
@@ -320,7 +335,8 @@ export const TransferPage: React.FC = () => {
           }
         } catch {}
       } else {
-        setPinError(err.message || 'Transfer failed. Please check your account details.');
+        const friendly = getFriendlyError(err);
+        setPinError(friendly.message);
       }
       setPinDigits(['', '', '', '']);
       pinInputRefs.current[0]?.focus();
@@ -418,6 +434,15 @@ export const TransferPage: React.FC = () => {
         </div>
         <p className="text-xs text-on-surface-variant">Send funds securely to any verified member account</p>
       </div>
+
+      {/* Account Load Error */}
+      {accountLoadError && !account && (
+        <ErrorState
+          title={accountLoadError.title}
+          message={accountLoadError.message}
+          onRetry={loadAccount}
+        />
+      )}
 
       {/* From-Account Source Card */}
       <div className="bg-surface-container-lowest rounded-2xl p-5 border border-outline-variant/30 shadow-xs flex flex-col gap-3 relative overflow-hidden">
@@ -617,14 +642,27 @@ export const TransferPage: React.FC = () => {
         </div>
 
         {/* Send Action Button */}
-        <button
-          type="submit"
-          disabled={isSubmitting || !verifiedRecipient}
-          className="h-12 w-full mt-2 bg-primary-container hover:bg-primary text-on-primary font-bold text-sm rounded-xl shadow-md transition-all active:scale-[0.99] flex items-center justify-center gap-2 disabled:opacity-50"
+        <div
+          onClick={() => {
+            if (!isOnline) triggerOfflineShake();
+          }}
+          className="w-full"
         >
-          <span>Send Money Now</span>
-          <ArrowRight className="w-4 h-4" />
-        </button>
+          <button
+            type="submit"
+            disabled={isSubmitting || !verifiedRecipient || !isOnline}
+            className="h-12 w-full mt-2 bg-primary-container hover:bg-primary text-on-primary font-bold text-sm rounded-xl shadow-md transition-all active:scale-[0.99] flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+          >
+            <span>Send Money Now</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        {!isOnline && (
+          <p className="text-xs text-amber-800 bg-amber-500/10 border border-amber-500/20 rounded-xl p-2.5 text-center font-medium">
+            Connect to the internet to send money.
+          </p>
+        )}
       </form>
 
       {/* ================= 4-DIGIT PIN BOTTOM-SHEET / MODAL ================= */}
@@ -715,22 +753,34 @@ export const TransferPage: React.FC = () => {
                 Forgot PIN?
               </button>
 
-              <button
-                type="button"
-                disabled={pinDigits.some((d) => !d) || isSubmitting || lockoutRemainingSec > 0}
-                onClick={() => handleExecuteTransfer(pinDigits.join(''))}
-                className="h-10 px-5 bg-primary hover:bg-primary/90 text-on-primary font-bold rounded-xl shadow-xs transition-all active:scale-98 disabled:opacity-40 flex items-center gap-1.5"
+              <div
+                onClick={() => {
+                  if (!isOnline) triggerOfflineShake();
+                }}
               >
-                {isSubmitting ? (
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <span>Confirm</span>
-                    <Check className="w-4 h-4" />
-                  </>
-                )}
-              </button>
+                <button
+                  type="button"
+                  disabled={pinDigits.some((d) => !d) || isSubmitting || lockoutRemainingSec > 0 || !isOnline}
+                  onClick={() => handleExecuteTransfer(pinDigits.join(''))}
+                  className="h-10 px-5 bg-primary hover:bg-primary/90 text-on-primary font-bold rounded-xl shadow-xs transition-all active:scale-98 disabled:opacity-40 flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? (
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <span>Confirm</span>
+                      <Check className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
+
+            {!isOnline && (
+              <p className="text-xs text-amber-800 bg-amber-500/10 border border-amber-500/20 rounded-xl p-2.5 text-center font-medium">
+                Connect to the internet to send money.
+              </p>
+            )}
           </div>
         </div>
       )}

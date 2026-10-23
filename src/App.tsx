@@ -28,13 +28,39 @@ import { AdminTransactionsPage } from './pages/admin/AdminTransactionsPage';
 // Smart Home Route: Redirects based on role if logged in
 const RootRoute: React.FC = () => {
   const { user, role, isLoading } = useAuth();
+  const [tookTooLong, setTookTooLong] = React.useState(false);
+
+  React.useEffect(() => {
+    let timer: NodeJS.Timeout | undefined;
+    if (isLoading) {
+      timer = setTimeout(() => {
+        setTookTooLong(true);
+      }, 10000);
+    } else {
+      setTookTooLong(false);
+    }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [isLoading]);
 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface">
-        <div className="flex flex-col items-center gap-3">
+        <div className="flex flex-col items-center gap-3 text-center px-4">
           <div className="w-10 h-10 border-3 border-primary/20 border-t-primary rounded-full animate-spin" />
           <span className="text-sm font-medium text-on-surface-variant">Loading Emprise Finance...</span>
+          {tookTooLong && (
+            <div className="flex flex-col items-center gap-3 mt-2 animate-fade-in">
+              <p className="text-xs text-on-surface-variant">This is taking longer than usual. Check your network.</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 bg-primary hover:bg-primary/90 text-on-primary text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );

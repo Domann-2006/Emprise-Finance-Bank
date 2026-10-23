@@ -6,6 +6,8 @@ import { TransactionRecord } from '../../types';
 import { formatCentsToUSD, formatDateTime } from '../../utils/format';
 import { TransactionBadge } from '../../components/common/StatusBadge';
 import { TableRowSkeleton } from '../../components/common/SkeletonLoader';
+import { ErrorState } from '../../components/common/ErrorState';
+import { getFriendlyError, withTimeout } from '../../utils/errorMessages';
 import {
   Receipt,
   Search,
@@ -18,34 +20,37 @@ import {
 export const AdminTransactionsPage: React.FC = () => {
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<{ title: string; message: string } | null>(null);
 
   // Filters
   const [typeFilter, setTypeFilter] = useState<'all' | 'credit' | 'debit' | 'adjustment'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [displayLimit, setDisplayLimit] = useState(15);
 
-  useEffect(() => {
-    const load = async () => {
-      setIsLoading(true);
-      if (isFirebaseConfigured() && db) {
-        try {
-          const q = query(collection(db, 'transactions'), orderBy('createdAt', 'desc'));
-          const snap = await getDocs(q);
-          const list = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as TransactionRecord[];
-          setTransactions(list);
-        } catch (err) {
-          console.error('Error fetching admin master transactions:', err);
-        } finally {
-          setIsLoading(false);
-        }
-      } else if (isMockEnabled) {
-        setTransactions(mockStorage.getAllTransactions());
-        setIsLoading(false);
-      } else {
+  const load = async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    if (isFirebaseConfigured() && db) {
+      try {
+        const q = query(collection(db, 'transactions'), orderBy('createdAt', 'desc'));
+        const snap = await withTimeout(getDocs(q), 10000);
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as TransactionRecord[];
+        setTransactions(list);
+      } catch (err) {
+        console.error('Error fetching admin master transactions:', err);
+        setLoadError(getFriendlyError(err));
+      } finally {
         setIsLoading(false);
       }
-    };
+    } else if (isMockEnabled) {
+      setTransactions(mockStorage.getAllTransactions());
+      setIsLoading(false);
+    } else {
+      setIsLoading(false);
+    }
+  };
 
+  useEffect(() => {
     load();
   }, []);
 
@@ -139,7 +144,13 @@ export const AdminTransactionsPage: React.FC = () => {
 
       {/* Transaction List */}
       <div className="space-y-3">
-        {isLoading ? (
+        {loadError && transactions.length === 0 ? (
+          <ErrorState
+            title={loadError.title}
+            message={loadError.message}
+            onRetry={load}
+          />
+        ) : isLoading ? (
           <TableRowSkeleton count={5} />
         ) : filtered.length > 0 ? (
           filtered.slice(0, displayLimit).map((tx) => (

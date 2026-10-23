@@ -2,6 +2,8 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Lock, LogIn, Eye, EyeOff, AlertCircle, X, ShieldCheck } from 'lucide-react';
 import { APP_NAME } from '../../config/brand';
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
+import { triggerOfflineShake } from '../../utils/errorMessages';
 
 interface LoginCardProps {
   username: string;
@@ -38,6 +40,7 @@ export const LoginCard: React.FC<LoginCardProps> = ({
   usernameInputRef,
   passwordInputRef,
 }) => {
+  const { isOnline } = useOnlineStatus();
   return (
     <div
       id="login"
@@ -141,20 +144,35 @@ export const LoginCard: React.FC<LoginCardProps> = ({
         </div>
 
         {/* Submit Button */}
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="h-12 w-full mt-2 flex items-center justify-center bg-primary hover:bg-primary-tint text-on-primary font-bold text-sm rounded-xl shadow-md transition-all active:scale-[0.99] gap-2 disabled:opacity-50 cursor-pointer"
+        <div
+          onClick={() => {
+            if (!isOnline) {
+              triggerOfflineShake();
+            }
+          }}
+          className="w-full"
         >
-          {isSubmitting ? (
-            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-          ) : (
-            <>
-              <LogIn className="w-4 h-4" aria-hidden="true" />
-              <span>Log In to {APP_NAME}</span>
-            </>
-          )}
-        </button>
+          <button
+            type="submit"
+            disabled={isSubmitting || !isOnline}
+            className="h-12 w-full mt-2 flex items-center justify-center bg-primary hover:bg-primary-tint text-on-primary font-bold text-sm rounded-xl shadow-md transition-all active:scale-[0.99] gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+          >
+            {isSubmitting ? (
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <>
+                <LogIn className="w-4 h-4" aria-hidden="true" />
+                <span>Log In to {APP_NAME}</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {!isOnline && (
+          <p className="text-xs text-amber-800 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2 text-center font-medium">
+            Connect to the internet to sign in.
+          </p>
+        )}
       </form>
 
       {/* Enrollment Link */}

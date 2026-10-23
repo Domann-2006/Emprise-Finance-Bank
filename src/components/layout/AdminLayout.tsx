@@ -13,6 +13,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { APP_NAME } from '../../config/brand';
+import { ConnectionBanner } from '../common/ConnectionBanner';
 
 export const AdminLayout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -133,6 +134,9 @@ export const AdminLayout: React.FC = () => {
           </button>
         </div>
       </header>
+
+      {/* Connection status banner fixed under header */}
+      <ConnectionBanner topOffsetClass="top-16 lg:left-64 xl:left-72" />
 
       {/* ================= MAIN CONTENT VIEWPORT ================= */}
       <div className="flex-1 lg:pl-64 xl:pl-72 flex flex-col min-h-screen">

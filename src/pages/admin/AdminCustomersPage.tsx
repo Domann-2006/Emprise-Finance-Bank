@@ -8,6 +8,8 @@ import { formatCentsToUSD, maskAccountNumber, parseUSDToCents } from '../../util
 import { UserStatusBadge } from '../../components/common/StatusBadge';
 import { TableRowSkeleton } from '../../components/common/SkeletonLoader';
 import { editCustomerBalance, updateCustomerStatus } from '../../services/banking';
+import { ErrorState } from '../../components/common/ErrorState';
+import { getFriendlyError, withTimeout } from '../../utils/errorMessages';
 import {
   Search,
   Wallet,
@@ -34,6 +36,7 @@ export const AdminCustomersPage: React.FC = () => {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<{ title: string; message: string } | null>(null);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -58,17 +61,24 @@ export const AdminCustomersPage: React.FC = () => {
 
   const loadData = async () => {
     setIsLoading(true);
+    setLoadError(null);
     if (isFirebaseConfigured() && db) {
       try {
-        const userSnap = await getDocs(collection(db, 'users'));
+        const [userSnap, acctSnap] = await withTimeout(
+          Promise.all([
+            getDocs(collection(db, 'users')),
+            getDocs(collection(db, 'accounts')),
+          ]),
+          10000
+        );
         const userList = userSnap.docs.map((d) => ({ uid: d.id, ...d.data() })) as UserProfile[];
         setUsers(userList.filter((u) => u.role === 'customer'));
 
-        const acctSnap = await getDocs(collection(db, 'accounts'));
         const acctList = acctSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as BankAccount[];
         setAccounts(acctList);
       } catch (err) {
         console.error('Error fetching admin customer directory:', err);
+        setLoadError(getFriendlyError(err));
       } finally {
         setIsLoading(false);
       }
@@ -238,7 +248,7 @@ export const AdminCustomersPage: React.FC = () => {
       triggerToast(`Transfer PIN reset for ${customer.name}.`);
     } catch (err: any) {
       console.error('Failed to reset customer PIN:', err);
-      triggerToast(`Error resetting PIN: ${err.message}`);
+      triggerToast(getFriendlyError(err).message);
     }
   };
 
@@ -326,7 +336,13 @@ export const AdminCustomersPage: React.FC = () => {
 
       {/* Customer Cards List */}
       <div className="space-y-4">
-        {isLoading ? (
+        {loadError && users.length === 0 ? (
+          <ErrorState
+            title={loadError.title}
+            message={loadError.message}
+            onRetry={loadData}
+          />
+        ) : isLoading ? (
           <TableRowSkeleton count={4} />
         ) : filteredUsers.length > 0 ? (
           filteredUsers.map((customer) => {

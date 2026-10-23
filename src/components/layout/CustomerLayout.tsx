@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { SUPPORT_PHONE, APP_NAME } from '../../config/brand';
 import { UserStatusBadge } from '../common/StatusBadge';
+import { ConnectionBanner } from '../common/ConnectionBanner';
 
 export const CustomerLayout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -224,6 +225,9 @@ export const CustomerLayout: React.FC = () => {
           </div>
         </div>
       </header>
+ 
+      {/* Connection status banner fixed under header */}
+      <ConnectionBanner topOffsetClass="top-16 lg:left-64 xl:left-72" />
 
       {/* ================= MAIN CONTENT WRAPPER ================= */}
       <div className="flex-1 lg:pl-64 xl:pl-72 flex flex-col min-h-screen">

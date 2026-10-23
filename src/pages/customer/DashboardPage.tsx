@@ -10,6 +10,8 @@ import { BankAccount, TransactionRecord } from '../../types';
 import { formatCentsToUSD, maskAccountNumber, formatDateTime } from '../../utils/format';
 import { CardSkeleton, TransactionSkeletonList } from '../../components/common/SkeletonLoader';
 import { TransactionBadge } from '../../components/common/StatusBadge';
+import { ErrorState } from '../../components/common/ErrorState';
+import { getFriendlyError, withTimeout } from '../../utils/errorMessages';
 import {
   Wallet,
   ArrowUpRight,
@@ -42,40 +44,39 @@ export const DashboardPage: React.FC = () => {
   const [activeFilter, setActiveFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [comingSoonToast, setComingSoonToast] = useState<string | null>(null);
   const [demoSkeletonMode, setDemoSkeletonMode] = useState(false);
+  const [loadError, setLoadError] = useState<{ title: string; message: string } | null>(null);
 
-  useEffect(() => {
+  const loadData = async () => {
     if (!user) return;
-
-    let unsubAccount = () => {};
-    let unsubTxns = () => {};
-
-    const loadData = async () => {
-      setIsLoadingAccount(true);
-      const acct = await getCustomerAccount(user.uid);
+    setIsLoadingAccount(true);
+    setLoadError(null);
+    try {
+      const acct = await withTimeout(getCustomerAccount(user.uid), 10000);
       setAccount(acct);
       setIsLoadingAccount(false);
 
       if (acct) {
         setIsLoadingTxns(true);
-        unsubAccount = subscribeToAccount(acct.id, (updatedAcct) => {
+        subscribeToAccount(acct.id, (updatedAcct) => {
           setAccount(updatedAcct);
         });
 
-        unsubTxns = subscribeToTransactions(acct.id, (txns) => {
+        subscribeToTransactions(acct.id, (txns) => {
           setTransactions(txns);
           setIsLoadingTxns(false);
         });
       } else {
         setIsLoadingTxns(false);
       }
-    };
+    } catch (err) {
+      setLoadError(getFriendlyError(err));
+      setIsLoadingAccount(false);
+      setIsLoadingTxns(false);
+    }
+  };
 
+  useEffect(() => {
     loadData();
-
-    return () => {
-      unsubAccount();
-      unsubTxns();
-    };
   }, [user]);
 
   const showComingSoon = (feature: string) => {
@@ -134,7 +135,13 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {/* Primary Account Card (Hero Navy Card matching Stitch Design) */}
-      {isLoadingAccount || demoSkeletonMode ? (
+      {loadError && !account ? (
+        <ErrorState
+          title={loadError.title}
+          message={loadError.message}
+          onRetry={loadData}
+        />
+      ) : isLoadingAccount || demoSkeletonMode ? (
         <CardSkeleton />
       ) : account ? (
         <div className="relative overflow-hidden bg-on-secondary-fixed text-on-secondary rounded-2xl p-6 sm:p-7 shadow-lg flex flex-col gap-6">

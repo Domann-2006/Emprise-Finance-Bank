@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getCustomerAccount, subscribeToTransactions } from '../../services/banking';
 import { BankAccount, TransactionRecord } from '../../types';
 import { formatCentsToUSD, formatDateOnly, formatDateTime } from '../../utils/format';
 import { TransactionBadge } from '../../components/common/StatusBadge';
 import { TransactionSkeletonList } from '../../components/common/SkeletonLoader';
+import { ErrorState } from '../../components/common/ErrorState';
+import { getFriendlyError, withTimeout } from '../../utils/errorMessages';
 import {
   Search,
   Receipt,
@@ -22,6 +24,7 @@ export const HistoryPage: React.FC = () => {
   const [account, setAccount] = useState<BankAccount | null>(null);
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<{ title: string; message: string } | null>(null);
 
   // Filters
   const [tabFilter, setTabFilter] = useState<'all' | 'credit' | 'debit'>('all');
@@ -30,28 +33,31 @@ export const HistoryPage: React.FC = () => {
   const [displayLimit, setDisplayLimit] = useState(10);
   const [exportNotice, setExportNotice] = useState(false);
 
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!user) return;
-
-    let unsub = () => {};
-    const load = async () => {
-      setIsLoading(true);
-      const acct = await getCustomerAccount(user.uid);
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const acct = await withTimeout(getCustomerAccount(user.uid), 10000);
       setAccount(acct);
 
       if (acct) {
-        unsub = subscribeToTransactions(acct.id, (txns) => {
+        subscribeToTransactions(acct.id, (txns) => {
           setTransactions(txns);
           setIsLoading(false);
         });
       } else {
         setIsLoading(false);
       }
-    };
-
-    load();
-    return () => unsub();
+    } catch (err) {
+      setLoadError(getFriendlyError(err));
+      setIsLoading(false);
+    }
   }, [user]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   // Extract available months from transactions for the month dropdown
   const availableMonths = useMemo(() => {
@@ -165,7 +171,15 @@ export const HistoryPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Summary Cards Strip (Inflow, Outflow, Net) */}
+      {loadError && !account ? (
+        <ErrorState
+          title={loadError.title}
+          message={loadError.message}
+          onRetry={loadData}
+        />
+      ) : (
+        <>
+          {/* Summary Cards Strip (Inflow, Outflow, Net) */}
       <div className="grid grid-cols-3 gap-2.5 sm:gap-4">
         {/* Inflow Card */}
         <div className="bg-surface-container-lowest p-3.5 sm:p-4 rounded-2xl border border-outline-variant/30 shadow-xs flex flex-col justify-between">
@@ -394,6 +408,8 @@ export const HistoryPage: React.FC = () => {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 };

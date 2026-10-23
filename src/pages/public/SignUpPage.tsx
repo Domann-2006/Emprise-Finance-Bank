@@ -26,11 +26,14 @@ import {
   Copy,
 } from 'lucide-react';
 import { useDraftState } from '../../hooks/useDraftState';
+import { useOnlineStatus } from '../../hooks/useOnlineStatus';
+import { getFriendlyError, triggerOfflineShake } from '../../utils/errorMessages';
 
 type SignUpSafeDraft = Omit<SignUpFormData, 'password' | 'govId'>;
 
 export const SignUpPage: React.FC = () => {
   const { signUp, isFirebaseActive } = useAuth();
+  const { isOnline } = useOnlineStatus();
   const navigate = useNavigate();
 
   const [draftData, setDraftData, clearSignUpDraft] = useDraftState<SignUpSafeDraft | null>(
@@ -156,16 +159,29 @@ export const SignUpPage: React.FC = () => {
       return;
     }
 
-    setIsSubmitting(true);
-    const result = await signUp(formData);
-    setIsSubmitting(false);
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      triggerOfflineShake();
+      const friendly = getFriendlyError(new Error('offline'));
+      setError(friendly.message);
+      return;
+    }
 
-    if (result.success) {
-      clearSignUpDraft();
-      setCreatedAccountNumber(result.accountNumber);
-      setCurrentStep(4); // Success step!
-    } else {
-      setError(result.error || 'Failed to complete enrollment. Please check your information.');
+    setIsSubmitting(true);
+    try {
+      const result = await signUp(formData);
+      if (result.success) {
+        clearSignUpDraft();
+        setCreatedAccountNumber(result.accountNumber);
+        setCurrentStep(4); // Success step!
+      } else {
+        const friendly = getFriendlyError(result.error);
+        setError(friendly.message);
+      }
+    } catch (err) {
+      const friendly = getFriendlyError(err);
+      setError(friendly.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -669,21 +685,33 @@ export const SignUpPage: React.FC = () => {
                 <ArrowLeft className="w-4 h-4" />
                 <span>Back</span>
               </button>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="h-11 px-6 bg-primary-container hover:bg-primary text-on-primary font-semibold text-sm rounded-xl shadow-md transition-all active:scale-[0.98] flex items-center gap-2 disabled:opacity-50"
+              <div
+                onClick={() => {
+                  if (!isOnline) triggerOfflineShake();
+                }}
               >
-                {isSubmitting ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <span>Complete Enrollment</span>
-                    <Check className="w-4 h-4" />
-                  </>
-                )}
-              </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !isOnline}
+                  className="h-11 px-6 bg-primary-container hover:bg-primary text-on-primary font-semibold text-sm rounded-xl shadow-md transition-all active:scale-[0.98] flex items-center gap-2 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <span>Complete Enrollment</span>
+                      <Check className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
+
+            {!isOnline && (
+              <p className="text-xs text-amber-800 bg-amber-500/10 border border-amber-500/20 rounded-xl p-2.5 text-center font-medium">
+                Connect to the internet to open an account.
+              </p>
+            )}
           </form>
         )}
 

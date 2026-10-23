@@ -7,6 +7,8 @@ import { UserProfile, BankAccount, TransactionRecord } from '../../types';
 import { formatCentsToUSD, maskAccountNumber } from '../../utils/format';
 import { UserStatusBadge } from '../../components/common/StatusBadge';
 import { TableRowSkeleton } from '../../components/common/SkeletonLoader';
+import { ErrorState } from '../../components/common/ErrorState';
+import { getFriendlyError, withTimeout } from '../../utils/errorMessages';
 import {
   Users,
   Building,
@@ -29,38 +31,46 @@ export const AdminOverviewPage: React.FC = () => {
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<{ title: string; message: string } | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      setIsLoading(true);
-      if (isFirebaseConfigured() && db) {
-        try {
-          const userSnap = await getDocs(collection(db, 'users'));
-          const userList = userSnap.docs.map((d) => ({ uid: d.id, ...d.data() })) as UserProfile[];
-          setUsers(userList.filter((u) => u.role === 'customer'));
+  const load = async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    if (isFirebaseConfigured() && db) {
+      try {
+        const [userSnap, acctSnap, txSnap] = await withTimeout(
+          Promise.all([
+            getDocs(collection(db, 'users')),
+            getDocs(collection(db, 'accounts')),
+            getDocs(collection(db, 'transactions')),
+          ]),
+          10000
+        );
+        const userList = userSnap.docs.map((d) => ({ uid: d.id, ...d.data() })) as UserProfile[];
+        setUsers(userList.filter((u) => u.role === 'customer'));
 
-          const acctSnap = await getDocs(collection(db, 'accounts'));
-          const acctList = acctSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as BankAccount[];
-          setAccounts(acctList);
+        const acctList = acctSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as BankAccount[];
+        setAccounts(acctList);
 
-          const txSnap = await getDocs(collection(db, 'transactions'));
-          const txList = txSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as TransactionRecord[];
-          setTransactions(txList);
-        } catch (err) {
-          console.error('Error loading admin overview stats:', err);
-        } finally {
-          setIsLoading(false);
-        }
-      } else if (isMockEnabled) {
-        setUsers(mockStorage.getUsers().filter((u) => u.role === 'customer'));
-        setAccounts(mockStorage.getUsers().map((u) => mockStorage.getAccountByOwner(u.uid)).filter(Boolean) as BankAccount[]);
-        setTransactions(mockStorage.getAllTransactions());
-        setIsLoading(false);
-      } else {
+        const txList = txSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as TransactionRecord[];
+        setTransactions(txList);
+      } catch (err) {
+        console.error('Error loading admin overview stats:', err);
+        setLoadError(getFriendlyError(err));
+      } finally {
         setIsLoading(false);
       }
-    };
+    } else if (isMockEnabled) {
+      setUsers(mockStorage.getUsers().filter((u) => u.role === 'customer'));
+      setAccounts(mockStorage.getUsers().map((u) => mockStorage.getAccountByOwner(u.uid)).filter(Boolean) as BankAccount[]);
+      setTransactions(mockStorage.getAllTransactions());
+      setIsLoading(false);
+    } else {
+      setIsLoading(false);
+    }
+  };
 
+  useEffect(() => {
     load();
   }, []);
 
@@ -98,9 +108,17 @@ export const AdminOverviewPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Metric Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Card 1: Total Customers */}
+      {loadError && users.length === 0 ? (
+        <ErrorState
+          title={loadError.title}
+          message={loadError.message}
+          onRetry={load}
+        />
+      ) : (
+        <>
+          {/* Metric Stat Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Card 1: Total Customers */}
         <div className="bg-surface-container-lowest p-5 rounded-2xl border border-outline-variant/30 shadow-xs flex flex-col justify-between">
           <div className="flex items-start justify-between">
             <div className="w-10 h-10 rounded-xl bg-tertiary-container/20 text-tertiary flex items-center justify-center">
@@ -252,6 +270,8 @@ export const AdminOverviewPage: React.FC = () => {
           </div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 };

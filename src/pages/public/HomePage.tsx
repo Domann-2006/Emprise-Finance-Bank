@@ -13,6 +13,8 @@ import { CommunityReportCard } from '../../components/home/CommunityReportCard';
 import { CircularImageCards } from '../../components/home/CircularImageCards';
 import { SecuritySection } from '../../components/home/SecuritySection';
 import { HomeFooter } from '../../components/home/HomeFooter';
+import { ConnectionBanner } from '../../components/common/ConnectionBanner';
+import { getFriendlyError, triggerOfflineShake } from '../../utils/errorMessages';
 import { BadgeCheck } from 'lucide-react';
 
 export const HomePage: React.FC = () => {
@@ -55,6 +57,13 @@ export const HomePage: React.FC = () => {
     setLocalError(null);
     clearError();
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      triggerOfflineShake();
+      const friendly = getFriendlyError(new Error('offline'));
+      setLocalError(friendly.message);
+      return;
+    }
+
     if (!username.trim() || !password) {
       setLocalError('Please enter both your username and password.');
       if (!password && username.trim()) {
@@ -64,21 +73,28 @@ export const HomePage: React.FC = () => {
     }
 
     setIsSubmitting(true);
-    const result = await login(username, password);
-    setIsSubmitting(false);
-
-    if (result.success) {
-      if (result.role === 'admin') {
-        navigate('/admin');
+    try {
+      const result = await login(username, password);
+      if (result.success) {
+        if (result.role === 'admin') {
+          navigate('/admin');
+        } else {
+          navigate('/dashboard');
+        }
       } else {
-        navigate('/dashboard');
+        setPassword('');
+        const friendly = getFriendlyError(result.error);
+        setLocalError(friendly.message);
+        setTimeout(() => {
+          passwordInputRef.current?.focus();
+        }, 0);
       }
-    } else {
+    } catch (err) {
       setPassword('');
-      setLocalError(result.error || 'Invalid credentials.');
-      setTimeout(() => {
-        passwordInputRef.current?.focus();
-      }, 0);
+      const friendly = getFriendlyError(err);
+      setLocalError(friendly.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -91,6 +107,9 @@ export const HomePage: React.FC = () => {
 
       {/* 2. Sticky Glass Header with Inline Desktop Links & Mobile Hamburger */}
       <HomeHeader onLoginClick={handleScrollToLogin} />
+
+      {/* Connection Banner fixed under header */}
+      <ConnectionBanner topOffsetClass="top-[64px] sm:top-[72px]" />
 
       {/* Main Content Sections */}
       <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 pb-12 space-y-16 sm:space-y-24">
