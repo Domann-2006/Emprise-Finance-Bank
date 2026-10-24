@@ -5,6 +5,7 @@ import {
   getCustomerAccount,
   lookupAccountDirectory,
   executeTransferTransaction,
+  verifyTransferPin,
 } from '../../services/banking';
 import { BankAccount, AccountDirectoryEntry } from '../../types';
 import { formatCentsToUSD, maskAccountNumber, parseUSDToCents } from '../../utils/format';
@@ -56,6 +57,7 @@ export const TransferPage: React.FC = () => {
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [pinDigits, setPinDigits] = useState<string[]>(['', '', '', '']);
   const [pinError, setPinError] = useState<string | null>(null);
+  const [transferErrorCode, setTransferErrorCode] = useState<string | null>(null);
   const pinInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Lockout state (3 attempts -> 15 min client-side lockout)
@@ -175,6 +177,7 @@ export const TransferPage: React.FC = () => {
   const handleInitiateSend = (e: React.FormEvent) => {
     e.preventDefault();
     setTransferError(null);
+    setTransferErrorCode(null);
 
     if (!account || !user) {
       setTransferError('Account details not ready.');
@@ -212,6 +215,7 @@ export const TransferPage: React.FC = () => {
     // Open PIN prompt modal
     setPinDigits(['', '', '', '']);
     setPinError(null);
+    setTransferErrorCode(null);
     setIsPinModalOpen(true);
     setTimeout(() => {
       pinInputRefs.current[0]?.focus();
@@ -221,6 +225,7 @@ export const TransferPage: React.FC = () => {
   // Step 2: Auto-advancing 4-digit PIN box handling
   const handlePinDigitChange = (index: number, val: string) => {
     setPinError(null);
+    setTransferErrorCode(null);
     const cleaned = val.replace(/\D/g, '');
     const newDigits = [...pinDigits];
 
@@ -275,8 +280,13 @@ export const TransferPage: React.FC = () => {
     const cents = parseUSDToCents(amountStr);
     setIsSubmitting(true);
     setPinError(null);
+    setTransferErrorCode(null);
 
     try {
+      // 1. Call verifyTransferPin FIRST
+      await verifyTransferPin(pinCode, user.uid);
+
+      // 2. Only if it succeeds, call executeTransferTransaction
       const result = await executeTransferTransaction({
         senderAccountId: account.id,
         senderUid: user.uid,
@@ -307,13 +317,14 @@ export const TransferPage: React.FC = () => {
       setVerifiedRecipient(null);
       setIsPinModalOpen(false);
     } catch (err: any) {
-      // Record failure attempt for lockout tracking
-      const isPinFail =
-        err?.code === 'PIN_OR_PERMISSION' ||
-        err?.message?.toLowerCase().includes('pin') ||
-        err?.message?.toLowerCase().includes('permission');
+      const code = err?.code || 'UNKNOWN';
+      const message = err?.message || 'Something went wrong.';
 
-      if (isPinFail) {
+      // Diagnostics: on any transfer failure
+      console.error('[transfer]', code, message);
+      setTransferErrorCode(code);
+
+      if (code === 'WRONG_PIN') {
         try {
           const raw = localStorage.getItem(`emprise:pinfail:${user.uid}`);
           const data = raw ? JSON.parse(raw) : { count: 0, lockedUntil: 0 };
@@ -333,13 +344,19 @@ export const TransferPage: React.FC = () => {
             );
             setPinError(`Incorrect PIN. ${3 - newCount} attempt(s) remaining before 15-minute lockout.`);
           }
-        } catch {}
+        } catch {
+          setPinError('Incorrect PIN. 2 attempt(s) remaining before 15-minute lockout.');
+        }
+        setPinDigits(['', '', '', '']);
+        pinInputRefs.current[0]?.focus();
+      } else if (code === 'NETWORK') {
+        setPinError('Network problem. Check your network connection and try again.');
+      } else if (code === 'TRANSFER_PERMISSION') {
+        setPinError('Transfer could not be completed. Please try again or contact support.');
       } else {
         const friendly = getFriendlyError(err);
         setPinError(friendly.message);
       }
-      setPinDigits(['', '', '', '']);
-      pinInputRefs.current[0]?.focus();
     } finally {
       setIsSubmitting(false);
     }
@@ -503,9 +520,19 @@ export const TransferPage: React.FC = () => {
 
       {/* Form Error Banner */}
       {transferError && (
-        <div className="p-3.5 bg-error-container text-on-error-container rounded-xl flex items-start gap-2 text-xs animate-shake">
-          <AlertCircle className="w-4 h-4 text-error shrink-0 mt-0.5" />
-          <div className="flex-1 font-semibold">{transferError}</div>
+        <div className="flex flex-col gap-1.5 animate-shake">
+          <div className="p-3.5 bg-error-container text-on-error-container rounded-xl flex items-start gap-2 text-xs">
+            <AlertCircle className="w-4 h-4 text-error shrink-0 mt-0.5" />
+            <div className="flex-1 font-semibold">{transferError}</div>
+          </div>
+          {transferErrorCode && (
+            <details className="text-[11px] text-on-surface-variant/80 px-1 cursor-pointer">
+              <summary className="hover:underline">Technical details</summary>
+              <div className="mt-1 font-mono text-[10px] text-on-surface-variant">
+                {transferErrorCode}
+              </div>
+            </details>
+          )}
         </div>
       )}
 
@@ -706,9 +733,19 @@ export const TransferPage: React.FC = () => {
 
             {/* Error / Lockout notice */}
             {pinError && (
-              <div className="p-3 bg-error-container text-on-error-container rounded-xl text-xs font-semibold flex items-center gap-2 animate-shake">
-                <AlertCircle className="w-4 h-4 text-error shrink-0" />
-                <span>{pinError}</span>
+              <div className="flex flex-col gap-1.5 animate-shake">
+                <div className="p-3 bg-error-container text-on-error-container rounded-xl text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-error shrink-0" />
+                  <span>{pinError}</span>
+                </div>
+                {transferErrorCode && (
+                  <details className="text-[11px] text-on-surface-variant/80 px-1 cursor-pointer">
+                    <summary className="hover:underline">Technical details</summary>
+                    <div className="mt-1 font-mono text-[10px] text-on-surface-variant">
+                      {transferErrorCode}
+                    </div>
+                  </details>
+                )}
               </div>
             )}
 

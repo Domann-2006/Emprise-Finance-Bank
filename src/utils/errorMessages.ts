@@ -42,6 +42,7 @@ const KNOWN_BUSINESS_MESSAGES = [
   'please enter a valid 10-digit mobile phone number',
   'too many failed pin attempts',
   'transfer pin configured successfully',
+  'transfer could not be completed',
 ];
 
 /**
@@ -153,7 +154,7 @@ export function getFriendlyError(error: unknown): FriendlyError {
   // 5. Permission / Access Denied Mapping
   const isPermissionDenied =
     lowerCode.includes('permission-denied') ||
-    lowerCode.includes('pin_or_permission') ||
+    lowerCode.includes('transfer_permission') ||
     lowerMsg.includes('permission-denied') ||
     lowerMsg.includes('missing or insufficient permissions') ||
     lowerMsg.includes('insufficient permission') ||

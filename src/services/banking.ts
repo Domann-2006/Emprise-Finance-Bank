@@ -6,6 +6,7 @@
 import {
   collection,
   doc,
+  addDoc,
   getDoc,
   getDocs,
   setDoc,
@@ -387,6 +388,59 @@ export function listenToTransactions(
 }
 
 /**
+ * Verifies a 4-digit transfer PIN by writing to the Firestore `pinChecks` collection.
+ * If this throws a Firestore 'permission-denied' error, throws an Error with code 'WRONG_PIN'.
+ * If it throws a network-type error (unavailable, deadline-exceeded), throws code 'NETWORK'.
+ * In mock mode, verifies against the mock-stored hash and throws 'WRONG_PIN' on mismatch.
+ */
+export async function verifyTransferPin(pin: string, uid: string): Promise<void> {
+  const hash = await hashPin(pin, uid);
+
+  const activeDb = db;
+  if (!isFirebaseConfigured() || !activeDb) {
+    if (isMockEnabled) {
+      const storedHash = mockStorage.getPinHash(uid);
+      if (!storedHash || storedHash !== hash) {
+        const err: any = new Error('Incorrect PIN.');
+        err.code = 'WRONG_PIN';
+        throw err;
+      }
+      return;
+    }
+    throw new Error('Firebase is not configured.');
+  }
+
+  try {
+    await addDoc(collection(activeDb, 'pinChecks'), { uid, hash });
+  } catch (err: any) {
+    const errCode = (err?.code || '').toLowerCase();
+    const errMsg = (err?.message || '').toLowerCase();
+
+    if (err?.code === 'permission-denied' || errCode === 'permission-denied') {
+      const pinErr: any = new Error('Incorrect PIN.');
+      pinErr.code = 'WRONG_PIN';
+      throw pinErr;
+    }
+
+    if (
+      errCode === 'unavailable' ||
+      errCode === 'deadline-exceeded' ||
+      errCode === 'auth/network-request-failed' ||
+      errMsg.includes('unavailable') ||
+      errMsg.includes('deadline-exceeded') ||
+      errMsg.includes('offline') ||
+      (typeof navigator !== 'undefined' && !navigator.onLine)
+    ) {
+      const netErr: any = new Error('Network problem. Check your network connection and try again.');
+      netErr.code = 'NETWORK';
+      throw netErr;
+    }
+
+    throw err;
+  }
+}
+
+/**
  * Executes an atomic transfer using Firestore runTransaction with PIN verification proof.
  * All document reads (dirSnap, senderSnap, senderUserSnap) execute strictly before any updates or sets.
  * Crucially, recipient's account doc is NOT read (avoiding permission-denied under owner-read security rules)
@@ -543,9 +597,9 @@ export async function executeTransferTransaction(params: {
     });
   } catch (err: any) {
     if (err?.code === 'permission-denied') {
-      const pinError: any = new Error('Transfer authorization failed. Incorrect PIN or insufficient permission.');
-      pinError.code = 'PIN_OR_PERMISSION';
-      throw pinError;
+      const permError: any = new Error('Transfer could not be completed. Please try again or contact support.');
+      permError.code = 'TRANSFER_PERMISSION';
+      throw permError;
     }
     throw err;
   }
