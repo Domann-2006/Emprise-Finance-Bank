@@ -18,6 +18,7 @@ import {
 import { SUPPORT_PHONE, APP_NAME } from '../../config/brand';
 import { UserStatusBadge } from '../common/StatusBadge';
 import { ConnectionBanner } from '../common/ConnectionBanner';
+import { UserAvatar } from '../common/UserAvatar';
 
 export const CustomerLayout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -128,9 +129,7 @@ export const CustomerLayout: React.FC = () => {
         {/* User Account Drawer / Sign Out */}
         <div className="p-4 border-t border-outline-variant/20 flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-full bg-primary-container/20 text-primary flex items-center justify-center font-bold text-sm shrink-0">
-              {user?.name?.[0] || 'U'}
-            </div>
+            <UserAvatar user={user} size="sm" className="w-9 h-9" />
             <div className="flex flex-col min-w-0">
               <span className="text-xs font-semibold text-on-surface truncate">{user?.name}</span>
               <span className="text-[11px] text-on-surface-variant truncate">Client Portal</span>
@@ -180,9 +179,9 @@ export const CustomerLayout: React.FC = () => {
                 aria-label="Account menu"
                 aria-expanded={isAvatarMenuOpen}
                 aria-haspopup="true"
-                className="w-8 h-8 rounded-full bg-primary-container/30 hover:bg-primary-container/50 text-on-primary flex items-center justify-center text-xs font-bold transition-all focus:outline-none focus:ring-2 focus:ring-secondary-fixed ring-offset-1 ring-offset-on-secondary-fixed"
+                className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-secondary-fixed ring-offset-1 ring-offset-on-secondary-fixed"
               >
-                {user?.name?.[0] || 'U'}
+                <UserAvatar user={user} size="sm" className="w-8 h-8" />
               </button>
 
               {isAvatarMenuOpen && (
@@ -191,9 +190,12 @@ export const CustomerLayout: React.FC = () => {
                   className="absolute right-0 top-full mt-2 w-56 rounded-2xl bg-surface-container-lowest text-on-surface shadow-xl border border-outline-variant/30 py-2 z-50 animate-fade-in"
                 >
                   {/* User info */}
-                  <div className="px-4 py-2.5 border-b border-outline-variant/20">
-                    <p className="text-xs font-bold text-on-surface truncate">{user?.name || 'Member'}</p>
-                    <p className="text-[11px] font-mono text-primary truncate">@{user?.username || 'user'}</p>
+                  <div className="px-4 py-2.5 border-b border-outline-variant/20 flex items-center gap-2.5">
+                    <UserAvatar user={user} size="sm" className="w-8 h-8" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-on-surface truncate">{user?.name || 'Member'}</p>
+                      <p className="text-[11px] font-mono text-primary truncate">@{user?.username || 'user'}</p>
+                    </div>
                   </div>
 
                   {/* Options */}

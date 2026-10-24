@@ -31,11 +31,13 @@ export const AdminCreateAccountPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [accountType, setAccountType] = useState<AccountType>('Checking');
   const [openingBalanceStr, setOpeningBalanceStr] = useState('500.00');
+  const [routingNumber, setRoutingNumber] = useState(ROUTING_NUMBER);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successResult, setSuccessResult] = useState<{
     accountNumber: string;
+    routingNumber: string;
     username: string;
     name: string;
     balanceCents: number;
@@ -65,6 +67,12 @@ export const AdminCreateAccountPage: React.FC = () => {
     }
     if (password.length < 6) {
       setError('Password must be at least 6 characters.');
+      return;
+    }
+
+    const cleanRouting = routingNumber.trim();
+    if (!cleanRouting || !/^\d{9}$/.test(cleanRouting)) {
+      setError('Routing number must be exactly 9 numeric digits.');
       return;
     }
 
@@ -104,10 +112,12 @@ export const AdminCreateAccountPage: React.FC = () => {
           dob,
           accountType,
           openingCents,
+          routingNumber: cleanRouting,
         });
 
         setSuccessResult({
           accountNumber: created.accountNumber,
+          routingNumber: cleanRouting,
           username: cleanUsername,
           name: created.user.name,
           balanceCents: openingCents,
@@ -133,10 +143,12 @@ export const AdminCreateAccountPage: React.FC = () => {
           dob,
           accountType,
           openingBalanceCents: openingCents,
+          routingNumber: cleanRouting,
         });
 
         setSuccessResult({
           accountNumber: account.accountNumber,
+          routingNumber: cleanRouting,
           username: cleanUsername,
           name: createdUser.name,
           balanceCents: openingCents,
@@ -160,6 +172,7 @@ export const AdminCreateAccountPage: React.FC = () => {
     setDob('');
     setPassword('Password123!');
     setOpeningBalanceStr('500.00');
+    setRoutingNumber(ROUTING_NUMBER);
     setSuccessResult(null);
   };
 
@@ -210,6 +223,10 @@ export const AdminCreateAccountPage: React.FC = () => {
             <div className="flex justify-between items-center">
               <span className="text-on-surface-variant">Account Number:</span>
               <span className="font-mono font-bold text-on-surface">{successResult.accountNumber}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-on-surface-variant">Electronic Routing:</span>
+              <span className="font-mono font-bold text-on-surface">{successResult.routingNumber}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-on-surface-variant">Account Type:</span>
@@ -371,6 +388,24 @@ export const AdminCreateAccountPage: React.FC = () => {
                   <span className="text-[11px] text-tertiary block mt-0.5">4.25% APY</span>
                 </button>
               </div>
+            </div>
+
+            {/* Routing Number */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-on-surface" htmlFor="custRouting">
+                Electronic Routing Number (9 Digits) *
+              </label>
+              <input
+                id="custRouting"
+                type="text"
+                inputMode="numeric"
+                maxLength={9}
+                value={routingNumber}
+                onChange={(e) => setRoutingNumber(e.target.value.replace(/\D/g, '').slice(0, 9))}
+                placeholder={ROUTING_NUMBER}
+                required
+                className="w-full h-11 px-3.5 bg-surface-container-low rounded-xl text-sm font-mono text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border border-outline-variant/30"
+              />
             </div>
 
             {/* Opening Balance */}

@@ -7,6 +7,7 @@
 import { UserProfile, BankAccount, AccountDirectoryEntry, TransactionRecord, SignUpFormData } from '../types';
 import { generateAccountNumber } from '../utils/format';
 import { hashPin } from '../utils/pin';
+import { ROUTING_NUMBER } from '../config/brand';
 
 const STORAGE_USERS_KEY = 'emprise_users_v1';
 const STORAGE_ACCOUNTS_KEY = 'emprise_accounts_v1';
@@ -36,6 +37,7 @@ const INITIAL_USERS: UserProfile[] = [
     address: { street: '420 N Michigan Ave', apt: 'Apt 14B', city: 'Chicago', state: 'IL', zip: '60611' },
     role: 'customer',
     status: 'active',
+    routingNumber: ROUTING_NUMBER,
     createdAt: new Date('2024-02-15').toISOString(),
   },
   {
@@ -48,6 +50,7 @@ const INITIAL_USERS: UserProfile[] = [
     address: { street: '780 S Wacker Dr', city: 'Chicago', state: 'IL', zip: '60606' },
     role: 'customer',
     status: 'active',
+    routingNumber: ROUTING_NUMBER,
     createdAt: new Date('2024-03-01').toISOString(),
   },
   {
@@ -60,6 +63,7 @@ const INITIAL_USERS: UserProfile[] = [
     address: { street: '100 W Randolph St', city: 'Chicago', state: 'IL', zip: '60601' },
     role: 'customer',
     status: 'active',
+    routingNumber: ROUTING_NUMBER,
     createdAt: new Date('2024-03-10').toISOString(),
   },
   {
@@ -72,6 +76,7 @@ const INITIAL_USERS: UserProfile[] = [
     address: { street: '222 Lake Shore Dr', city: 'Chicago', state: 'IL', zip: '60611' },
     role: 'customer',
     status: 'disabled', // Disabled account for testing disabled auth guards
+    routingNumber: ROUTING_NUMBER,
     createdAt: new Date('2024-04-05').toISOString(),
   },
 ];
@@ -330,6 +335,7 @@ class MockStorageService {
       },
       role: 'customer',
       status: 'active',
+      routingNumber: formData.routingNumber?.trim() || ROUTING_NUMBER,
       createdAt: new Date().toISOString(),
     };
 
@@ -364,6 +370,7 @@ class MockStorageService {
     dob: string;
     accountType: 'Checking' | 'Savings';
     openingBalanceCents: number;
+    routingNumber?: string;
   }): { user: UserProfile; account: BankAccount } {
     const cleanUsername = params.username.trim().toLowerCase();
     if (this.getUserByUsername(cleanUsername)) {
@@ -384,6 +391,7 @@ class MockStorageService {
       address: { street: '120 Main Street', city: 'Chicago', state: 'IL', zip: '60601' },
       role: 'customer',
       status: 'active',
+      routingNumber: params.routingNumber?.trim() || ROUTING_NUMBER,
       createdAt: new Date().toISOString(),
     };
 

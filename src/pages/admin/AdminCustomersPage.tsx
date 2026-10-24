@@ -6,6 +6,7 @@ import { collection, getDocs, doc, setDoc, deleteDoc, updateDoc, query, where } 
 import { UserProfile, BankAccount } from '../../types';
 import { formatCentsToUSD, maskAccountNumber, parseUSDToCents } from '../../utils/format';
 import { UserStatusBadge } from '../../components/common/StatusBadge';
+import { UserAvatar } from '../../components/common/UserAvatar';
 import { TableRowSkeleton } from '../../components/common/SkeletonLoader';
 import { editCustomerBalance, updateCustomerStatus } from '../../services/banking';
 import { ErrorState } from '../../components/common/ErrorState';
@@ -355,9 +356,12 @@ export const AdminCustomersPage: React.FC = () => {
                 {/* Header row with avatar, name, and status toggle */}
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-3.5 min-w-0">
-                    <div className="w-12 h-12 rounded-2xl bg-primary-container/20 text-primary flex items-center justify-center font-bold text-lg shrink-0">
-                      {customer.name[0]}
-                    </div>
+                    <UserAvatar
+                      user={customer}
+                      size="lg"
+                      className="w-12 h-12"
+                      roundedClassName="rounded-2xl"
+                    />
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <h3 className="text-base font-bold text-on-surface truncate">{customer.name}</h3>

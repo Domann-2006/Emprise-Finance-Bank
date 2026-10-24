@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 
 import { useDraftState } from '../../hooks/useDraftState';
+import { useAuth } from '../../context/AuthContext';
 
 interface FAQItem {
   id: string;
@@ -34,6 +35,8 @@ interface FAQItem {
 }
 
 export const SupportPage: React.FC = () => {
+  const { user } = useAuth();
+  const achRoutingNumber = user?.routingNumber || ROUTING_NUMBER;
   const [searchQuery, setSearchQuery] = useDraftState<string>(null, 'support_search', '');
   const [activeCategory, setActiveCategory] = useState<'all' | 'transfers' | 'cards' | 'accounts' | 'loans'>('all');
   const [openFaqId, setOpenFaqId] = useState<string | null>('q1'); // default expanded
@@ -58,10 +61,10 @@ export const SupportPage: React.FC = () => {
             <div className="p-3 bg-surface-container rounded-xl flex items-center justify-between">
               <div>
                 <span className="text-[11px] text-on-surface-variant block font-medium">ACH / Direct Deposit</span>
-                <span className="text-base font-bold font-mono text-on-surface">{ROUTING_NUMBER}</span>
+                <span className="text-base font-bold font-mono text-on-surface">{achRoutingNumber}</span>
               </div>
               <button
-                onClick={() => copyToClipboard(ROUTING_NUMBER, 'ach')}
+                onClick={() => copyToClipboard(achRoutingNumber, 'ach')}
                 className="p-2 rounded-lg bg-surface-container-lowest hover:bg-white text-tertiary shadow-xs"
               >
                 {copiedKey === 'ach' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}

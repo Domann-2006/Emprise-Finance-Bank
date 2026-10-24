@@ -33,7 +33,7 @@ interface AuthContextType {
   isSessionExpiredModalOpen: boolean;
   login: (username: string, password: string) => Promise<{ success: boolean; role: UserRole; error?: string }>;
   signUp: (formData: SignUpFormData) => Promise<{ success: boolean; accountNumber: string; error?: string }>;
-  updateProfile: (updates: Partial<Pick<UserProfile, 'email' | 'phone' | 'address'>>) => Promise<{ success: boolean; error?: string }>;
+  updateProfile: (updates: Partial<Pick<UserProfile, 'email' | 'phone' | 'address' | 'routingNumber' | 'photoDataUrl'>>) => Promise<{ success: boolean; error?: string }>;
   setTransferPin: (newPin: string) => Promise<{ success: boolean; error?: string }>;
   changeTransferPin: (currentPin: string, newPin: string) => Promise<{ success: boolean; error?: string }>;
   resetTransferPinWithPassword: (password: string, newPin: string) => Promise<{ success: boolean; error?: string }>;
@@ -335,21 +335,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Update customer profile (contact email, phone, residential address only)
+  // Update customer profile (contact email, phone, residential address, routing number, profile photo)
   const updateProfile = async (
-    updates: Partial<Pick<UserProfile, 'email' | 'phone' | 'address'>>
+    updates: Partial<Pick<UserProfile, 'email' | 'phone' | 'address' | 'routingNumber' | 'photoDataUrl'>>
   ): Promise<{ success: boolean; error?: string }> => {
     if (!user) {
       return { success: false, error: 'No active session. Please sign in again.' };
     }
 
-    // Whitelist allowed fields: email, phone, address only
-    const filteredUpdates: Partial<Pick<UserProfile, 'email' | 'phone' | 'address'>> = {};
+    // Whitelist allowed fields: email, phone, address, routingNumber, photoDataUrl
+    const filteredUpdates: Partial<Pick<UserProfile, 'email' | 'phone' | 'address' | 'routingNumber' | 'photoDataUrl'>> = {};
     if (typeof updates.email === 'string') {
       filteredUpdates.email = updates.email.trim();
     }
     if (typeof updates.phone === 'string') {
       filteredUpdates.phone = updates.phone.trim();
+    }
+    if (typeof updates.routingNumber === 'string') {
+      filteredUpdates.routingNumber = updates.routingNumber.trim();
+    }
+    if (typeof updates.photoDataUrl === 'string') {
+      // Allow photoDataUrl to be removed by passing an empty string
+      filteredUpdates.photoDataUrl = updates.photoDataUrl;
     }
     if (updates.address) {
       filteredUpdates.address = {
@@ -378,6 +385,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (mockUser) {
           if (filteredUpdates.email !== undefined) mockUser.email = filteredUpdates.email;
           if (filteredUpdates.phone !== undefined) mockUser.phone = filteredUpdates.phone;
+          if (filteredUpdates.routingNumber !== undefined) mockUser.routingNumber = filteredUpdates.routingNumber;
+          if (filteredUpdates.photoDataUrl !== undefined) mockUser.photoDataUrl = filteredUpdates.photoDataUrl;
           if (filteredUpdates.address !== undefined) {
             mockUser.address = { ...mockUser.address, ...filteredUpdates.address };
           }

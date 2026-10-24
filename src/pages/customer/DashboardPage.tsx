@@ -10,6 +10,7 @@ import { BankAccount, TransactionRecord } from '../../types';
 import { formatCentsToUSD, maskAccountNumber, formatDateTime } from '../../utils/format';
 import { CardSkeleton, TransactionSkeletonList } from '../../components/common/SkeletonLoader';
 import { TransactionBadge } from '../../components/common/StatusBadge';
+import { UserAvatar } from '../../components/common/UserAvatar';
 import { ErrorState } from '../../components/common/ErrorState';
 import { getFriendlyError, withTimeout } from '../../utils/errorMessages';
 import {
@@ -106,9 +107,7 @@ export const DashboardPage: React.FC = () => {
       <div className="bg-surface-container-lowest p-5 rounded-2xl shadow-xs border border-outline-variant/30 flex items-center justify-between">
         <div className="flex items-center gap-3.5 min-w-0">
           <div className="relative shrink-0">
-            <div className="w-12 h-12 rounded-full bg-primary-container/20 text-primary flex items-center justify-center font-bold text-lg">
-              {user?.name?.[0] || 'E'}
-            </div>
+            <UserAvatar user={user} size="lg" className="w-12 h-12" />
             <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-primary-container rounded-full ring-2 ring-white" />
           </div>
           <div className="flex flex-col min-w-0">

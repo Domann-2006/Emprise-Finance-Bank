@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getCustomerAccount } from '../../services/banking';
 import { BankAccount } from '../../types';
 import { formatDateTime, maskAccountNumber } from '../../utils/format';
 import { UserStatusBadge } from '../../components/common/StatusBadge';
+import { UserAvatar } from '../../components/common/UserAvatar';
 import { APP_NAME, deriveAuthEmail, ROUTING_NUMBER } from '../../config/brand';
 import { isFirebaseConfigured, isMockEnabled, auth } from '../../services/firebase';
 import {
@@ -29,6 +30,9 @@ import {
   Lock,
   LogOut,
   X,
+  Camera,
+  Upload,
+  Trash2,
 } from 'lucide-react';
 import { isWeakPin } from '../../utils/pin';
 import { useDraftState } from '../../hooks/useDraftState';
@@ -56,9 +60,26 @@ export const ProfilePage: React.FC = () => {
   const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
 
+  // Profile Photo State
+  const [photoMenuOpen, setPhotoMenuOpen] = useState(false);
+  const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
+  const [isSavingPhoto, setIsSavingPhoto] = useState(false);
+  const [showPhotoPreview, setShowPhotoPreview] = useState(false);
+  const [pendingPhotoDataUrl, setPendingPhotoDataUrl] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+
+  const photoMenuRef = useRef<HTMLDivElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+
   // Form Fields State with draft persistence
   const [email, setEmail, clearEmailDraft] = useDraftState(user?.uid, 'profile_email', user?.email || '');
   const [phone, setPhone, clearPhoneDraft] = useDraftState(user?.uid, 'profile_phone', user?.phone || '');
+  const [routingNumber, setRoutingNumber, clearRoutingNumberDraft] = useDraftState(
+    user?.uid,
+    'profile_routing',
+    user?.routingNumber || ROUTING_NUMBER
+  );
   const [street, setStreet, clearStreetDraft] = useDraftState(user?.uid, 'profile_street', user?.address?.street || '');
   const [apt, setApt, clearAptDraft] = useDraftState(user?.uid, 'profile_apt', user?.address?.apt || '');
   const [city, setCity, clearCityDraft] = useDraftState(user?.uid, 'profile_city', user?.address?.city || '');
@@ -69,6 +90,7 @@ export const ProfilePage: React.FC = () => {
   const [fieldErrors, setFieldErrors] = useState<{
     email?: string;
     phone?: string;
+    routingNumber?: string;
     street?: string;
     city?: string;
     state?: string;
@@ -100,6 +122,7 @@ export const ProfilePage: React.FC = () => {
   const resetProfileFields = () => {
     setEmail(user?.email || '');
     setPhone(user?.phone || '');
+    setRoutingNumber(user?.routingNumber || ROUTING_NUMBER);
     setStreet(user?.address?.street || '');
     setApt(user?.address?.apt || '');
     setCity(user?.address?.city || '');
@@ -107,6 +130,7 @@ export const ProfilePage: React.FC = () => {
     setZip(user?.address?.zip || '');
     clearEmailDraft();
     clearPhoneDraft();
+    clearRoutingNumberDraft();
     clearStreetDraft();
     clearAptDraft();
     clearCityDraft();
@@ -120,6 +144,7 @@ export const ProfilePage: React.FC = () => {
     if (user && !isEditing) {
       setEmail(user.email || '');
       setPhone(user.phone || '');
+      setRoutingNumber(user.routingNumber || ROUTING_NUMBER);
       setStreet(user.address?.street || '');
       setApt(user.address?.apt || '');
       setCity(user.address?.city || '');
@@ -127,6 +152,21 @@ export const ProfilePage: React.FC = () => {
       setZip(user.address?.zip || '');
     }
   }, [user]);
+
+  // Close photo dropdown on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (photoMenuRef.current && !photoMenuRef.current.contains(e.target as Node)) {
+        setPhotoMenuOpen(false);
+      }
+    };
+    if (photoMenuOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [photoMenuOpen]);
 
   const loadAccount = async () => {
     if (!user) return;
@@ -143,6 +183,119 @@ export const ProfilePage: React.FC = () => {
     loadAccount();
   }, [user]);
 
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setPhotoError(null);
+
+    // Accept JPEG, PNG and WebP only
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    const hasValidExt = /\.(jpe?g|png|webp)$/i.test(file.name);
+    if (!validTypes.includes(file.type) && !hasValidExt) {
+      setPhotoError('Invalid image format. Please select a JPEG, PNG, or WebP photo.');
+      return;
+    }
+
+    // Reject files over 10 MB with a friendly message
+    if (file.size > 10 * 1024 * 1024) {
+      setPhotoError('Image file is too large. Please select a photo under 10 MB.');
+      return;
+    }
+
+    setIsProcessingPhoto(true);
+
+    const reader = new FileReader();
+    reader.onerror = () => {
+      setPhotoError('Failed to read image file. Please try again.');
+      setIsProcessingPhoto(false);
+    };
+    reader.onload = (readEv) => {
+      const img = new Image();
+      img.onerror = () => {
+        setPhotoError('Unable to load image. Please select a valid picture.');
+        setIsProcessingPhoto(false);
+      };
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = 256;
+          canvas.height = 256;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            throw new Error('Canvas 2D context unavailable.');
+          }
+
+          // Center-crop square
+          const minDim = Math.min(img.naturalWidth, img.naturalHeight);
+          const sx = (img.naturalWidth - minDim) / 2;
+          const sy = (img.naturalHeight - minDim) / 2;
+
+          ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, 256, 256);
+
+          // Export as JPEG at quality 0.8
+          let dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+
+          // If the data URL is over 150 KB, re-export at quality 0.6
+          const base64Part = dataUrl.split(',')[1] || '';
+          const approxBytes = Math.floor((base64Part.length * 3) / 4);
+          if (approxBytes > 150 * 1024) {
+            dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+          }
+
+          setPendingPhotoDataUrl(dataUrl);
+          setShowPhotoPreview(true);
+        } catch (err: any) {
+          setPhotoError(err.message || 'Error processing image.');
+        } finally {
+          setIsProcessingPhoto(false);
+        }
+      };
+      img.src = readEv.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSavePhoto = async () => {
+    if (!pendingPhotoDataUrl) return;
+    setIsSavingPhoto(true);
+    setPhotoError(null);
+    try {
+      const res = await updateProfile({ photoDataUrl: pendingPhotoDataUrl });
+      if (res.success) {
+        setShowPhotoPreview(false);
+        setPendingPhotoDataUrl(null);
+        setProfileSuccess('Profile updated');
+        setTimeout(() => setProfileSuccess(null), 4000);
+      } else {
+        setPhotoError(res.error || 'Failed to save profile photo.');
+      }
+    } catch (err: any) {
+      setPhotoError(err.message || 'Failed to save profile photo.');
+    } finally {
+      setIsSavingPhoto(false);
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    setPhotoError(null);
+    setIsSavingPhoto(true);
+    try {
+      const res = await updateProfile({ photoDataUrl: '' });
+      if (res.success) {
+        setProfileSuccess('Profile updated');
+        setTimeout(() => setProfileSuccess(null), 4000);
+      } else {
+        setPhotoError(res.error || 'Failed to remove profile photo.');
+      }
+    } catch (err: any) {
+      setPhotoError(err.message || 'Failed to remove profile photo.');
+    } finally {
+      setIsSavingPhoto(false);
+    }
+  };
+
   const handleSaveProfile = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setProfileError(null);
@@ -158,6 +311,7 @@ export const ProfilePage: React.FC = () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const cleanEmail = email.trim();
     const cleanPhone = phone.trim();
+    const cleanRouting = routingNumber.trim();
     const cleanStreet = street.trim();
     const cleanCity = city.trim();
     const cleanState = state.trim().toUpperCase();
@@ -174,6 +328,12 @@ export const ProfilePage: React.FC = () => {
       errs.phone = 'Mobile phone is required.';
     } else if (digits.length < 10) {
       errs.phone = 'Phone number must contain at least 10 digits.';
+    }
+
+    if (!cleanRouting) {
+      errs.routingNumber = 'Routing number is required.';
+    } else if (!/^\d{9}$/.test(cleanRouting)) {
+      errs.routingNumber = 'Routing number must be exactly 9 digits.';
     }
 
     if (!cleanStreet) {
@@ -207,6 +367,7 @@ export const ProfilePage: React.FC = () => {
     const res = await updateProfile({
       email: cleanEmail,
       phone: cleanPhone,
+      routingNumber: cleanRouting,
       address: {
         street: cleanStreet,
         apt: apt.trim(),
@@ -221,12 +382,13 @@ export const ProfilePage: React.FC = () => {
     if (res.success) {
       clearEmailDraft();
       clearPhoneDraft();
+      clearRoutingNumberDraft();
       clearStreetDraft();
       clearAptDraft();
       clearCityDraft();
       clearStateDraft();
       clearZipDraft();
-      setProfileSuccess('Profile updated successfully.');
+      setProfileSuccess('Profile updated');
       setIsEditing(false);
       setTimeout(() => {
         setProfileSuccess(null);
@@ -446,9 +608,89 @@ export const ProfilePage: React.FC = () => {
       <div className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/30 shadow-xs flex flex-col gap-5">
         <div className="flex items-center justify-between pb-4 border-b border-outline-variant/20">
           <div className="flex items-center gap-3.5 min-w-0">
-            <div className="w-14 h-14 rounded-2xl bg-primary-container/20 text-primary flex items-center justify-center font-bold text-xl shrink-0">
-              {user?.name?.[0] || 'U'}
+            <div className="relative" ref={photoMenuRef}>
+              <button
+                type="button"
+                onClick={() => setPhotoMenuOpen((prev) => !prev)}
+                className="relative group focus:outline-none rounded-2xl block"
+                aria-label="Change profile photo"
+                title="Change profile photo"
+              >
+                <UserAvatar
+                  user={user}
+                  size="xl"
+                  className="w-14 h-14"
+                  roundedClassName="rounded-2xl"
+                />
+                <span className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-md ring-2 ring-surface-container-lowest group-hover:scale-110 transition-transform">
+                  <Camera className="w-3.5 h-3.5" />
+                </span>
+              </button>
+
+              {/* Hidden file inputs */}
+              <input
+                type="file"
+                ref={uploadInputRef}
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handleFileSelected}
+                className="hidden"
+              />
+              <input
+                type="file"
+                ref={cameraInputRef}
+                accept="image/jpeg,image/png,image/webp"
+                capture="user"
+                onChange={handleFileSelected}
+                className="hidden"
+              />
+
+              {/* Photo Menu Dropdown */}
+              {photoMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute left-0 top-full mt-2 w-48 rounded-xl bg-surface-container-lowest text-on-surface shadow-xl border border-outline-variant/30 py-1.5 z-30 animate-fade-in"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPhotoMenuOpen(false);
+                      uploadInputRef.current?.click();
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-xs font-medium hover:bg-surface-container flex items-center gap-2 transition-colors text-on-surface"
+                  >
+                    <Upload className="w-4 h-4 text-primary shrink-0" />
+                    <span>Upload photo</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPhotoMenuOpen(false);
+                      cameraInputRef.current?.click();
+                    }}
+                    className="w-full px-3.5 py-2 text-left text-xs font-medium hover:bg-surface-container flex items-center gap-2 transition-colors text-on-surface"
+                  >
+                    <Camera className="w-4 h-4 text-tertiary shrink-0" />
+                    <span>Take photo</span>
+                  </button>
+
+                  {Boolean(user?.photoDataUrl) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhotoMenuOpen(false);
+                        handleRemovePhoto();
+                      }}
+                      className="w-full px-3.5 py-2 text-left text-xs font-medium text-error hover:bg-error-container/20 flex items-center gap-2 transition-colors border-t border-outline-variant/20 mt-1"
+                    >
+                      <Trash2 className="w-4 h-4 text-error shrink-0" />
+                      <span>Remove photo</span>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
+
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-on-surface truncate">{user?.name}</h2>
@@ -513,6 +755,13 @@ export const ProfilePage: React.FC = () => {
         </div>
 
         {/* Feedback Notifications for Profile */}
+        {photoError && (
+          <div className="p-3 bg-error-container text-on-error-container rounded-xl text-xs font-semibold flex items-center gap-2 animate-fade-in">
+            <AlertCircle className="w-4 h-4 text-error shrink-0" />
+            <span>{photoError}</span>
+          </div>
+        )}
+
         {profileSuccess && (
           <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-2 animate-fade-in">
             <Check className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -527,7 +776,7 @@ export const ProfilePage: React.FC = () => {
           </div>
         )}
 
-        {/* Read-Only Account Credentials */}
+        {/* Read-Only Account Credentials and Editable Routing */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
           <div className="p-3.5 bg-surface-container-low rounded-xl">
             <div className="flex items-center justify-between mb-1">
@@ -544,13 +793,42 @@ export const ProfilePage: React.FC = () => {
 
           <div className="p-3.5 bg-surface-container-low rounded-xl">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-on-surface-variant">Electronic Routing</span>
-              <Lock className="w-3 h-3 text-on-surface-variant/50" />
+              <label htmlFor="profileRouting" className="text-on-surface-variant font-medium">
+                Electronic Routing
+              </label>
             </div>
-            <span className="text-sm font-bold text-on-surface font-mono block">
-              {ROUTING_NUMBER}
-            </span>
-            <span className="text-xs text-on-surface-variant mt-0.5 block">ACH / Direct Deposit</span>
+            {isEditing ? (
+              <div className="space-y-1">
+                <input
+                  id="profileRouting"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={9}
+                  value={routingNumber}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '').slice(0, 9);
+                    setRoutingNumber(val);
+                    if (fieldErrors.routingNumber) setFieldErrors((p) => ({ ...p, routingNumber: undefined }));
+                  }}
+                  disabled={isSaving}
+                  placeholder={ROUTING_NUMBER}
+                  className={`w-full h-9 px-3 bg-surface-container-lowest rounded-lg text-sm font-mono text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 border transition-colors ${
+                    fieldErrors.routingNumber ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/30'
+                  }`}
+                />
+                {fieldErrors.routingNumber && (
+                  <p className="text-xs text-error font-medium">{fieldErrors.routingNumber}</p>
+                )}
+                <span className="text-[11px] text-on-surface-variant block">ACH / Direct Deposit</span>
+              </div>
+            ) : (
+              <>
+                <span className="text-sm font-bold text-on-surface font-mono block">
+                  {user?.routingNumber || ROUTING_NUMBER}
+                </span>
+                <span className="text-xs text-on-surface-variant mt-0.5 block">ACH / Direct Deposit</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -1184,6 +1462,68 @@ export const ProfilePage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Profile Photo Preview Modal */}
+      {showPhotoPreview && pendingPhotoDataUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fade-in">
+          <div className="bg-surface-container-lowest rounded-2xl p-6 max-w-sm w-full border border-outline-variant/30 shadow-2xl flex flex-col gap-5 text-center">
+            <h3 className="text-base font-bold text-on-surface">Preview Profile Photo</h3>
+            <p className="text-xs text-on-surface-variant -mt-2">
+              Center-cropped 256×256 square preview
+            </p>
+
+            <div className="mx-auto">
+              <img
+                src={pendingPhotoDataUrl}
+                alt="Profile Preview"
+                className="w-36 h-36 rounded-full object-cover shadow-md ring-4 ring-primary/20 mx-auto"
+              />
+            </div>
+
+            {photoError && (
+              <p className="text-xs text-error font-medium">{photoError}</p>
+            )}
+
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <button
+                type="button"
+                disabled={isSavingPhoto}
+                onClick={() => {
+                  setShowPhotoPreview(false);
+                  setPendingPhotoDataUrl(null);
+                  setPhotoError(null);
+                }}
+                className="h-10 rounded-xl border border-outline-variant/40 hover:bg-surface-container text-xs font-semibold text-on-surface-variant transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isSavingPhoto}
+                onClick={handleSavePhoto}
+                className="h-10 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50"
+              >
+                {isSavingPhoto ? (
+                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <Check className="w-3.5 h-3.5" />
+                )}
+                <span>Save photo</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Processing Photo Spinner */}
+      {isProcessingPhoto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs">
+          <div className="bg-surface-container-lowest px-5 py-4 rounded-2xl border border-outline-variant/30 shadow-xl flex items-center gap-3 text-xs font-semibold text-on-surface">
+            <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+            <span>Processing photo...</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

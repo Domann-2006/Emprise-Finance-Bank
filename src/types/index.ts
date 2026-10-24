@@ -23,6 +23,8 @@ export interface UserProfile {
   role: UserRole;
   status: UserStatus;
   hasPin?: boolean;
+  routingNumber?: string;
+  photoDataUrl?: string;
   createdAt: any;
 }
 
@@ -81,6 +83,7 @@ export interface SignUpFormData {
   username: string;
   password: string;
   accountType: AccountType;
+  routingNumber?: string;
 }
 
 export interface TransferRequest {

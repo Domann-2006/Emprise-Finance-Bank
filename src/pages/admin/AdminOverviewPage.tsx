@@ -6,6 +6,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { UserProfile, BankAccount, TransactionRecord } from '../../types';
 import { formatCentsToUSD, maskAccountNumber } from '../../utils/format';
 import { UserStatusBadge } from '../../components/common/StatusBadge';
+import { UserAvatar } from '../../components/common/UserAvatar';
 import { TableRowSkeleton } from '../../components/common/SkeletonLoader';
 import { ErrorState } from '../../components/common/ErrorState';
 import { getFriendlyError, withTimeout } from '../../utils/errorMessages';
@@ -232,9 +233,7 @@ export const AdminOverviewPage: React.FC = () => {
                   className="p-4 rounded-xl bg-surface-container-low hover:bg-surface-container transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary-container/20 text-primary flex items-center justify-center font-bold text-sm shrink-0">
-                      {u.name[0]}
-                    </div>
+                    <UserAvatar user={u} size="md" className="w-10 h-10" />
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-bold text-on-surface">{u.name}</span>

@@ -32,6 +32,7 @@ import {
 } from '../types';
 import { generateAccountNumber } from '../utils/format';
 import { hashPin } from '../utils/pin';
+import { ROUTING_NUMBER } from '../config/brand';
 
 /**
  * Generates a verified unique 10-digit account number by checking accountDirectory first
@@ -97,6 +98,7 @@ export async function createNewCustomerAccount(
       state: formData.state,
       zip: formData.zip,
     },
+    routingNumber: formData.routingNumber?.trim() || ROUTING_NUMBER,
     role: 'customer',
     status: 'active',
     createdAt: serverTimestamp(),
@@ -158,6 +160,7 @@ export async function adminCreateCustomerAccount(params: {
   dob: string;
   accountType: AccountType;
   openingCents: number;
+  routingNumber?: string;
 }): Promise<{ user: UserProfile; account: BankAccount; accountNumber: string }> {
   const activeDb = db;
   if (!isFirebaseConfigured() || !activeDb) {
@@ -169,13 +172,14 @@ export async function adminCreateCustomerAccount(params: {
         dob: params.dob,
         accountType: params.accountType,
         openingBalanceCents: params.openingCents,
+        routingNumber: params.routingNumber,
       });
       return { user: res.user, account: res.account, accountNumber: res.account.accountNumber };
     }
     throw new Error('Firebase is not configured. Live admin creation is disabled.');
   }
 
-  const { uid, name, username, email, dob, accountType, openingCents } = params;
+  const { uid, name, username, email, dob, accountType, openingCents, routingNumber } = params;
   const cleanUsername = username.trim().toLowerCase();
 
   // 1. Ensure unique account number by checking directory first
@@ -192,6 +196,7 @@ export async function adminCreateCustomerAccount(params: {
     dob,
     phone: '(555) 010-0000',
     address: { street: '120 Financial Plaza', city: 'Chicago', state: 'IL', zip: '60601' },
+    routingNumber: routingNumber?.trim() || ROUTING_NUMBER,
     role: 'customer',
     status: 'active',
     createdAt: serverTimestamp(),

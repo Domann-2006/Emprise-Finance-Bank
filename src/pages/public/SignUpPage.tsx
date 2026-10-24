@@ -59,6 +59,7 @@ export const SignUpPage: React.FC = () => {
     username: draftData?.username || '',
     password: '', // NEVER draft or persist password
     accountType: draftData?.accountType || 'Checking',
+    routingNumber: draftData?.routingNumber || ROUTING_NUMBER,
   }));
 
   // Sync non-sensitive form fields to debounced draft
@@ -156,6 +157,11 @@ export const SignUpPage: React.FC = () => {
     }
     if (formData.password.length < 6) {
       setError('Password must be at least 6 characters.');
+      return;
+    }
+    const cleanRouting = (formData.routingNumber || ROUTING_NUMBER).trim();
+    if (!/^\d{9}$/.test(cleanRouting)) {
+      setError('Routing number must be exactly 9 numeric digits.');
       return;
     }
 
@@ -597,6 +603,30 @@ export const SignUpPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Routing Number */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-on-surface" htmlFor="reg-routing">
+                Electronic Routing Number (9 Digits) *
+              </label>
+              <input
+                id="reg-routing"
+                type="text"
+                inputMode="numeric"
+                maxLength={9}
+                value={formData.routingNumber || ROUTING_NUMBER}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '').slice(0, 9);
+                  setFormData({ ...formData, routingNumber: val });
+                }}
+                placeholder={ROUTING_NUMBER}
+                required
+                className="w-full h-11 px-3.5 bg-surface-container-low rounded-xl text-sm font-mono text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border border-outline-variant/30"
+              />
+              <p className="text-[11px] text-on-surface-variant">
+                ABA Routing Number for ACH, direct deposit, and wire transfers.
+              </p>
+            </div>
+
             {/* Username & Password */}
             <div className="space-y-4">
               <div className="space-y-1">
@@ -762,7 +792,7 @@ export const SignUpPage: React.FC = () => {
 
               <div className="flex items-center justify-between pb-2 border-b border-outline-variant/20">
                 <span className="text-xs text-on-surface-variant font-medium">Electronic Routing (ACH)</span>
-                <span className="text-sm font-mono font-bold text-on-surface">{ROUTING_NUMBER}</span>
+                <span className="text-sm font-mono font-bold text-on-surface">{formData.routingNumber || ROUTING_NUMBER}</span>
               </div>
 
               <div className="flex items-center justify-between">
