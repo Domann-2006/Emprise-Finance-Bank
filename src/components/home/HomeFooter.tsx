@@ -171,7 +171,7 @@ export const HomeFooter: React.FC = () => {
               </li>
               <li>
                 <span className="block text-[11px] uppercase tracking-wider text-[#071c36] font-bold">Fraud Support Hotline</span>
-                <span className="text-xs font-semibold text-[#191c1e]">1-800-555-FRAUD</span>
+                <span className="text-xs font-semibold text-[#191c1e]">{SUPPORT_PHONE_DISPLAY}</span>
               </li>
               <li className="pt-1">
                 <Link

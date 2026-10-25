@@ -20,7 +20,7 @@ import {
   increment,
   Firestore,
 } from 'firebase/firestore';
-import { db, isFirebaseConfigured, isMockEnabled } from './firebase';
+import { db, auth, isFirebaseConfigured, isMockEnabled } from './firebase';
 import { mockStorage } from './mockStorage';
 import {
   BankAccount,
@@ -353,7 +353,8 @@ export function listenToAccount(
  */
 export function listenToTransactions(
   accountId: string,
-  onUpdate: (transactions: TransactionRecord[]) => void
+  onUpdate: (transactions: TransactionRecord[]) => void,
+  onError?: (err: unknown) => void
 ): () => void {
   const activeDb = db;
   if (!isFirebaseConfigured() || !activeDb) {
@@ -369,10 +370,16 @@ export function listenToTransactions(
     return () => {};
   }
 
+  const currentUserUid = auth?.currentUser?.uid;
+  if (!currentUserUid) {
+    onUpdate([]);
+    return () => {};
+  }
+
+  // Query by ownerUid so Firestore security rules succeed without requiring composite index
   const q = query(
     collection(activeDb, 'transactions'),
-    where('accountId', '==', accountId),
-    orderBy('createdAt', 'desc')
+    where('ownerUid', '==', currentUserUid)
   );
 
   const unsubscribe = onSnapshot(
@@ -382,10 +389,35 @@ export function listenToTransactions(
         id: d.id,
         ...d.data(),
       })) as TransactionRecord[];
-      onUpdate(list);
+
+      // Filter client-side by accountId
+      const filtered = list.filter((tx) => tx.accountId === accountId);
+
+      // Sort client-side by createdAt descending (missing/pending values sort newest first)
+      filtered.sort((a, b) => {
+        const getMillis = (val: any): number => {
+          if (!val) return Number.MAX_SAFE_INTEGER;
+          if (typeof val.toMillis === 'function') return val.toMillis();
+          if (typeof val.toDate === 'function') return val.toDate().getTime();
+          if (val instanceof Date) return val.getTime();
+          if (typeof val === 'number') return val;
+          if (typeof val === 'string') {
+            const parsed = new Date(val).getTime();
+            if (!isNaN(parsed)) return parsed;
+          }
+          if (val.seconds !== undefined) {
+            return val.seconds * 1000 + (val.nanoseconds || 0) / 1000000;
+          }
+          return Number.MAX_SAFE_INTEGER;
+        };
+        return getMillis(b.createdAt) - getMillis(a.createdAt);
+      });
+
+      onUpdate(filtered);
     },
     (err) => {
       console.error('Transactions query listener error:', err);
+      onError?.(err);
     }
   );
 

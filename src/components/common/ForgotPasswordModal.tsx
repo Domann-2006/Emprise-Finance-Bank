@@ -47,11 +47,10 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
           </div>
 
           <a
-            href={`tel:${SUPPORT_PHONE.replace(/-/g, '')}`}
+            href={`tel:+1${SUPPORT_PHONE.replace(/-/g, '')}`}
             className="text-lg font-bold text-primary hover:underline flex items-center gap-2"
           >
             <span>{SUPPORT_PHONE_DISPLAY}</span>
-            <span className="text-xs font-normal text-on-surface-variant">({SUPPORT_PHONE})</span>
           </a>
 
           <div className="text-xs text-on-surface-variant space-y-1">

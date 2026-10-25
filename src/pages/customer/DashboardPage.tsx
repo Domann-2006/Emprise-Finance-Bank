@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -46,11 +46,40 @@ export const DashboardPage: React.FC = () => {
   const [comingSoonToast, setComingSoonToast] = useState<string | null>(null);
   const [demoSkeletonMode, setDemoSkeletonMode] = useState(false);
   const [loadError, setLoadError] = useState<{ title: string; message: string } | null>(null);
+  const [txnsError, setTxnsError] = useState<{ title: string; message: string } | null>(null);
 
-  const loadData = async () => {
+  const unsubscribeTxnsRef = useRef<(() => void) | null>(null);
+  const unsubscribeAcctRef = useRef<(() => void) | null>(null);
+  const txnsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cleanupListeners = useCallback(() => {
+    if (txnsTimeoutRef.current) {
+      clearTimeout(txnsTimeoutRef.current);
+      txnsTimeoutRef.current = null;
+    }
+    if (unsubscribeTxnsRef.current) {
+      unsubscribeTxnsRef.current();
+      unsubscribeTxnsRef.current = null;
+    }
+    if (unsubscribeAcctRef.current) {
+      unsubscribeAcctRef.current();
+      unsubscribeAcctRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      cleanupListeners();
+    };
+  }, [cleanupListeners]);
+
+  const loadData = useCallback(async () => {
     if (!user) return;
+    cleanupListeners();
     setIsLoadingAccount(true);
     setLoadError(null);
+    setTxnsError(null);
+
     try {
       const acct = await withTimeout(getCustomerAccount(user.uid), 10000);
       setAccount(acct);
@@ -58,27 +87,53 @@ export const DashboardPage: React.FC = () => {
 
       if (acct) {
         setIsLoadingTxns(true);
-        subscribeToAccount(acct.id, (updatedAcct) => {
+        unsubscribeAcctRef.current = subscribeToAccount(acct.id, (updatedAcct) => {
           setAccount(updatedAcct);
         });
 
-        subscribeToTransactions(acct.id, (txns) => {
-          setTransactions(txns);
+        // 10-second safety timeout: if no snapshot arrives, stop skeleton and show network ErrorState
+        txnsTimeoutRef.current = setTimeout(() => {
           setIsLoadingTxns(false);
-        });
+          setTxnsError({
+            title: 'Connection Timed Out',
+            message: 'Unable to load recent activity. Please check your network connection and try again.',
+          });
+        }, 10000);
+
+        unsubscribeTxnsRef.current = subscribeToTransactions(
+          acct.id,
+          (txns) => {
+            if (txnsTimeoutRef.current) {
+              clearTimeout(txnsTimeoutRef.current);
+              txnsTimeoutRef.current = null;
+            }
+            setTransactions(txns);
+            setIsLoadingTxns(false);
+            setTxnsError(null);
+          },
+          (err) => {
+            if (txnsTimeoutRef.current) {
+              clearTimeout(txnsTimeoutRef.current);
+              txnsTimeoutRef.current = null;
+            }
+            setTxnsError(getFriendlyError(err));
+            setIsLoadingTxns(false);
+          }
+        );
       } else {
         setIsLoadingTxns(false);
       }
     } catch (err) {
+      cleanupListeners();
       setLoadError(getFriendlyError(err));
       setIsLoadingAccount(false);
       setIsLoadingTxns(false);
     }
-  };
+  }, [user, cleanupListeners]);
 
   useEffect(() => {
     loadData();
-  }, [user]);
+  }, [loadData]);
 
   const showComingSoon = (feature: string) => {
     setComingSoonToast(`${feature} is coming soon to digital banking.`);
@@ -347,7 +402,13 @@ export const DashboardPage: React.FC = () => {
         </div>
 
         {/* Transactions List */}
-        {isLoadingTxns || demoSkeletonMode ? (
+        {txnsError ? (
+          <ErrorState
+            title={txnsError.title}
+            message={txnsError.message}
+            onRetry={loadData}
+          />
+        ) : isLoadingTxns || demoSkeletonMode ? (
           <TransactionSkeletonList count={4} />
         ) : recentTransactions.length > 0 ? (
           <div className="space-y-3">
@@ -409,7 +470,7 @@ export const DashboardPage: React.FC = () => {
             <div className="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant">
               <Receipt className="w-6 h-6" />
             </div>
-            <h4 className="text-sm font-bold text-on-surface">No recent transactions</h4>
+            <h4 className="text-sm font-bold text-on-surface">No transactions yet</h4>
             <p className="text-xs text-on-surface-variant max-w-xs">
               When you send or receive funds, your transaction history will appear here in real time.
             </p>

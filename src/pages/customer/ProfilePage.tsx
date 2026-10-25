@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getCustomerAccount } from '../../services/banking';
@@ -6,6 +7,7 @@ import { BankAccount } from '../../types';
 import { formatDateTime, maskAccountNumber } from '../../utils/format';
 import { UserStatusBadge } from '../../components/common/StatusBadge';
 import { UserAvatar } from '../../components/common/UserAvatar';
+import { PhotoViewerModal } from '../../components/common/PhotoViewerModal';
 import { APP_NAME, deriveAuthEmail, ROUTING_NUMBER } from '../../config/brand';
 import { isFirebaseConfigured, isMockEnabled, auth } from '../../services/firebase';
 import {
@@ -65,6 +67,7 @@ export const ProfilePage: React.FC = () => {
   const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
   const [isSavingPhoto, setIsSavingPhoto] = useState(false);
   const [showPhotoPreview, setShowPhotoPreview] = useState(false);
+  const [showPhotoViewer, setShowPhotoViewer] = useState(false);
   const [pendingPhotoDataUrl, setPendingPhotoDataUrl] = useState<string | null>(null);
   const [photoError, setPhotoError] = useState<string | null>(null);
 
@@ -220,8 +223,8 @@ export const ProfilePage: React.FC = () => {
       img.onload = () => {
         try {
           const canvas = document.createElement('canvas');
-          canvas.width = 256;
-          canvas.height = 256;
+          canvas.width = 512;
+          canvas.height = 512;
           const ctx = canvas.getContext('2d');
           if (!ctx) {
             throw new Error('Canvas 2D context unavailable.');
@@ -232,16 +235,24 @@ export const ProfilePage: React.FC = () => {
           const sx = (img.naturalWidth - minDim) / 2;
           const sy = (img.naturalHeight - minDim) / 2;
 
-          ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, 256, 256);
+          ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, 512, 512);
 
-          // Export as JPEG at quality 0.8
-          let dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          const getByteSize = (url: string) => {
+            const base64Part = url.split(',')[1] || '';
+            return Math.floor((base64Part.length * 3) / 4);
+          };
 
-          // If the data URL is over 150 KB, re-export at quality 0.6
-          const base64Part = dataUrl.split(',')[1] || '';
-          const approxBytes = Math.floor((base64Part.length * 3) / 4);
-          if (approxBytes > 150 * 1024) {
-            dataUrl = canvas.toDataURL('image/jpeg', 0.6);
+          // Export as JPEG at quality 0.85
+          let dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+          // If the data URL is over 250 KB, re-export at quality 0.70
+          if (getByteSize(dataUrl) > 250 * 1024) {
+            dataUrl = canvas.toDataURL('image/jpeg', 0.70);
+          }
+
+          // If still over 250 KB, re-export at quality 0.55
+          if (getByteSize(dataUrl) > 250 * 1024) {
+            dataUrl = canvas.toDataURL('image/jpeg', 0.55);
           }
 
           setPendingPhotoDataUrl(dataUrl);
@@ -266,7 +277,7 @@ export const ProfilePage: React.FC = () => {
       if (res.success) {
         setShowPhotoPreview(false);
         setPendingPhotoDataUrl(null);
-        setProfileSuccess('Profile updated');
+        setProfileSuccess('Profile photo updated');
         setTimeout(() => setProfileSuccess(null), 4000);
       } else {
         setPhotoError(res.error || 'Failed to save profile photo.');
@@ -650,6 +661,20 @@ export const ProfilePage: React.FC = () => {
                   role="menu"
                   className="absolute left-0 top-full mt-2 w-48 rounded-xl bg-surface-container-lowest text-on-surface shadow-xl border border-outline-variant/30 py-1.5 z-30 animate-fade-in"
                 >
+                  {Boolean(user?.photoDataUrl) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhotoMenuOpen(false);
+                        setShowPhotoViewer(true);
+                      }}
+                      className="w-full px-3.5 py-2 text-left text-xs font-medium hover:bg-surface-container flex items-center gap-2 transition-colors text-on-surface"
+                    >
+                      <Eye className="w-4 h-4 text-primary shrink-0" />
+                      <span>View photo</span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => {
@@ -659,7 +684,7 @@ export const ProfilePage: React.FC = () => {
                     className="w-full px-3.5 py-2 text-left text-xs font-medium hover:bg-surface-container flex items-center gap-2 transition-colors text-on-surface"
                   >
                     <Upload className="w-4 h-4 text-primary shrink-0" />
-                    <span>Upload photo</span>
+                    <span>{user?.photoDataUrl ? 'Upload new photo' : 'Upload photo'}</span>
                   </button>
 
                   <button
@@ -1464,66 +1489,115 @@ export const ProfilePage: React.FC = () => {
       </div>
 
       {/* Profile Photo Preview Modal */}
-      {showPhotoPreview && pendingPhotoDataUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fade-in">
-          <div className="bg-surface-container-lowest rounded-2xl p-6 max-w-sm w-full border border-outline-variant/30 shadow-2xl flex flex-col gap-5 text-center">
-            <h3 className="text-base font-bold text-on-surface">Preview Profile Photo</h3>
-            <p className="text-xs text-on-surface-variant -mt-2">
-              Center-cropped 256×256 square preview
-            </p>
+      {showPhotoPreview && pendingPhotoDataUrl &&
+        ReactDOM.createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Preview profile photo"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in"
+          >
+            <div className="bg-surface-container-lowest rounded-2xl p-6 max-w-sm w-full border border-outline-variant/30 shadow-2xl flex flex-col gap-4 text-center max-h-[92vh] overflow-y-auto">
+              <div>
+                <h3 className="text-base font-bold text-on-surface">Preview Profile Photo</h3>
+                <p className="text-xs text-on-surface-variant mt-1">
+                  Preview. Your photo is not saved until you tap Save photo.
+                </p>
+              </div>
 
-            <div className="mx-auto">
-              <img
-                src={pendingPhotoDataUrl}
-                alt="Profile Preview"
-                className="w-36 h-36 rounded-full object-cover shadow-md ring-4 ring-primary/20 mx-auto"
-              />
+              {/* Previews: Full square image + Small circle avatar */}
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-full max-w-[18rem] aspect-square rounded-2xl overflow-hidden border border-outline-variant/30 shadow-md bg-surface-container-low">
+                  <img
+                    src={pendingPhotoDataUrl}
+                    alt="Full square preview"
+                    className="w-full h-full aspect-square object-cover rounded-2xl"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-surface-container-low border border-outline-variant/20">
+                  <img
+                    src={pendingPhotoDataUrl}
+                    alt="Avatar circle preview"
+                    className="w-8 h-8 rounded-full object-cover ring-2 ring-primary/30"
+                  />
+                  <span className="text-[11px] font-medium text-on-surface-variant">
+                    Header avatar preview
+                  </span>
+                </div>
+              </div>
+
+              {photoError && (
+                <p className="text-xs text-error font-medium">{photoError}</p>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex flex-col gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={isSavingPhoto}
+                  onClick={handleSavePhoto}
+                  className="w-full h-10 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+                >
+                  {isSavingPhoto ? (
+                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <Check className="w-3.5 h-3.5" />
+                  )}
+                  <span>Save photo</span>
+                </button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    disabled={isSavingPhoto}
+                    onClick={() => {
+                      uploadInputRef.current?.click();
+                    }}
+                    className="h-9 rounded-xl border border-outline-variant/40 hover:bg-surface-container text-xs font-semibold text-primary transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Choose different</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isSavingPhoto}
+                    onClick={() => {
+                      setShowPhotoPreview(false);
+                      setPendingPhotoDataUrl(null);
+                      setPhotoError(null);
+                    }}
+                    className="h-9 rounded-xl border border-outline-variant/40 hover:bg-surface-container text-xs font-semibold text-on-surface-variant transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             </div>
-
-            {photoError && (
-              <p className="text-xs text-error font-medium">{photoError}</p>
-            )}
-
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <button
-                type="button"
-                disabled={isSavingPhoto}
-                onClick={() => {
-                  setShowPhotoPreview(false);
-                  setPendingPhotoDataUrl(null);
-                  setPhotoError(null);
-                }}
-                className="h-10 rounded-xl border border-outline-variant/40 hover:bg-surface-container text-xs font-semibold text-on-surface-variant transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isSavingPhoto}
-                onClick={handleSavePhoto}
-                className="h-10 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] disabled:opacity-50"
-              >
-                {isSavingPhoto ? (
-                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <Check className="w-3.5 h-3.5" />
-                )}
-                <span>Save photo</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* Processing Photo Spinner */}
-      {isProcessingPhoto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs">
-          <div className="bg-surface-container-lowest px-5 py-4 rounded-2xl border border-outline-variant/30 shadow-xl flex items-center gap-3 text-xs font-semibold text-on-surface">
-            <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-            <span>Processing photo...</span>
-          </div>
-        </div>
-      )}
+      {isProcessingPhoto &&
+        ReactDOM.createPortal(
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-xs">
+            <div className="bg-surface-container-lowest px-5 py-4 rounded-2xl border border-outline-variant/30 shadow-xl flex items-center gap-3 text-xs font-semibold text-on-surface">
+              <div className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+              <span>Processing photo...</span>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* Full-Screen Photo Viewer */}
+      <PhotoViewerModal
+        isOpen={showPhotoViewer}
+        onClose={() => setShowPhotoViewer(false)}
+        photoUrl={user?.photoDataUrl}
+        userName={user?.name}
+      />
     </div>
   );
 };

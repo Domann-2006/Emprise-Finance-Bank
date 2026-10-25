@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getCustomerAccount, subscribeToTransactions } from '../../services/banking';
 import { BankAccount, TransactionRecord } from '../../types';
@@ -26,6 +26,9 @@ export const HistoryPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<{ title: string; message: string } | null>(null);
 
+  const unsubscribeTxnsRef = useRef<(() => void) | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Filters
   const [tabFilter, setTabFilter] = useState<'all' | 'credit' | 'debit'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -33,8 +36,26 @@ export const HistoryPage: React.FC = () => {
   const [displayLimit, setDisplayLimit] = useState(10);
   const [exportNotice, setExportNotice] = useState(false);
 
+  const cleanupListeners = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    if (unsubscribeTxnsRef.current) {
+      unsubscribeTxnsRef.current();
+      unsubscribeTxnsRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      cleanupListeners();
+    };
+  }, [cleanupListeners]);
+
   const loadData = useCallback(async () => {
     if (!user) return;
+    cleanupListeners();
     setIsLoading(true);
     setLoadError(null);
     try {
@@ -42,18 +63,44 @@ export const HistoryPage: React.FC = () => {
       setAccount(acct);
 
       if (acct) {
-        subscribeToTransactions(acct.id, (txns) => {
-          setTransactions(txns);
+        // 10-second safety timeout: if no snapshot arrives, stop skeleton and show ErrorState
+        timeoutRef.current = setTimeout(() => {
           setIsLoading(false);
-        });
+          setLoadError({
+            title: 'Connection Timed Out',
+            message: 'Unable to load transaction records. Please check your network connection and try again.',
+          });
+        }, 10000);
+
+        unsubscribeTxnsRef.current = subscribeToTransactions(
+          acct.id,
+          (txns) => {
+            if (timeoutRef.current) {
+              clearTimeout(timeoutRef.current);
+              timeoutRef.current = null;
+            }
+            setTransactions(txns);
+            setIsLoading(false);
+            setLoadError(null);
+          },
+          (err) => {
+            if (timeoutRef.current) {
+              clearTimeout(timeoutRef.current);
+              timeoutRef.current = null;
+            }
+            setLoadError(getFriendlyError(err));
+            setIsLoading(false);
+          }
+        );
       } else {
         setIsLoading(false);
       }
     } catch (err) {
+      cleanupListeners();
       setLoadError(getFriendlyError(err));
       setIsLoading(false);
     }
-  }, [user]);
+  }, [user, cleanupListeners]);
 
   useEffect(() => {
     loadData();
@@ -171,7 +218,7 @@ export const HistoryPage: React.FC = () => {
         </button>
       </div>
 
-      {loadError && !account ? (
+      {loadError ? (
         <ErrorState
           title={loadError.title}
           message={loadError.message}
@@ -372,6 +419,16 @@ export const HistoryPage: React.FC = () => {
               </div>
             </div>
           ))
+        ) : transactions.length === 0 ? (
+          <div className="bg-surface-container-lowest p-12 rounded-2xl text-center border border-outline-variant/30 flex flex-col items-center gap-2">
+            <div className="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant">
+              <Receipt className="w-6 h-6" />
+            </div>
+            <h4 className="text-sm font-bold text-on-surface">No transactions yet</h4>
+            <p className="text-xs text-on-surface-variant max-w-xs">
+              When you send or receive transfers, they will appear here in real time.
+            </p>
+          </div>
         ) : (
           <div className="bg-surface-container-lowest p-12 rounded-2xl text-center border border-outline-variant/30 flex flex-col items-center gap-2">
             <div className="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center text-on-surface-variant">

@@ -97,7 +97,7 @@ export const SupportPage: React.FC = () => {
           <p>If your card is misplaced or compromised, take these steps immediately:</p>
           <ol className="list-decimal pl-4 space-y-1">
             <li><strong>Instant Freeze:</strong> Use the Freeze Card button in your online banking dashboard to instantly block all new point-of-sale and online transactions.</li>
-            <li><strong>Call Member Care:</strong> Dial {SUPPORT_PHONE_DISPLAY} ({SUPPORT_PHONE}) to request an expedited replacement card with Zero Liability protection.</li>
+            <li><strong>Call Member Care:</strong> Dial {SUPPORT_PHONE_DISPLAY} to request an expedited replacement card with Zero Liability protection.</li>
           </ol>
         </div>
       ),
@@ -182,7 +182,7 @@ export const SupportPage: React.FC = () => {
             If your account has been locked due to consecutive incorrect password attempts or an administrative hold, automated self-service resets are restricted to prevent identity theft.
           </p>
           <p>
-            Please call Member Care directly at <strong className="text-on-surface">{SUPPORT_PHONE_DISPLAY} ({SUPPORT_PHONE})</strong> to complete voice authentication with a representative.
+            Please call Member Care directly at <strong className="text-on-surface">{SUPPORT_PHONE_DISPLAY}</strong> to complete voice authentication with a representative.
           </p>
         </div>
       ),
@@ -299,7 +299,7 @@ export const SupportPage: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {/* Phone */}
           <a
-            href={`tel:${SUPPORT_PHONE.replace(/-/g, '')}`}
+            href={`tel:+1${SUPPORT_PHONE.replace(/-/g, '')}`}
             className="p-3.5 rounded-xl bg-surface-container-low hover:bg-surface-container transition-all flex items-center justify-between gap-3"
           >
             <div className="flex items-center gap-3">
@@ -308,7 +308,6 @@ export const SupportPage: React.FC = () => {
               </div>
               <div>
                 <span className="text-sm font-bold text-on-surface block">{SUPPORT_PHONE_DISPLAY}</span>
-                <span className="text-xs text-on-surface-variant font-medium">({SUPPORT_PHONE})</span>
               </div>
             </div>
             <span className="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-semibold">

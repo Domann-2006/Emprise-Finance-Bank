@@ -14,11 +14,13 @@ import {
   PhoneCall,
   Menu,
   X,
+  Eye,
 } from 'lucide-react';
 import { SUPPORT_PHONE, APP_NAME } from '../../config/brand';
 import { UserStatusBadge } from '../common/StatusBadge';
 import { ConnectionBanner } from '../common/ConnectionBanner';
 import { UserAvatar } from '../common/UserAvatar';
+import { PhotoViewerModal } from '../common/PhotoViewerModal';
 
 export const CustomerLayout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -26,6 +28,7 @@ export const CustomerLayout: React.FC = () => {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const [isAvatarMenuOpen, setIsAvatarMenuOpen] = React.useState(false);
+  const [isPhotoViewerOpen, setIsPhotoViewerOpen] = React.useState(false);
   const avatarMenuRef = React.useRef<HTMLDivElement>(null);
 
   // Close avatar dropdown on outside click or Escape key
@@ -129,7 +132,19 @@ export const CustomerLayout: React.FC = () => {
         {/* User Account Drawer / Sign Out */}
         <div className="p-4 border-t border-outline-variant/20 flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
-            <UserAvatar user={user} size="sm" className="w-9 h-9" />
+            <button
+              type="button"
+              onClick={() => {
+                if (user?.photoDataUrl) {
+                  setIsPhotoViewerOpen(true);
+                }
+              }}
+              className={user?.photoDataUrl ? 'cursor-pointer hover:opacity-90 transition-opacity' : 'cursor-default'}
+              title={user?.photoDataUrl ? 'View profile photo' : undefined}
+              aria-label={user?.photoDataUrl ? 'View profile photo' : undefined}
+            >
+              <UserAvatar user={user} size="sm" className="w-9 h-9" />
+            </button>
             <div className="flex flex-col min-w-0">
               <span className="text-xs font-semibold text-on-surface truncate">{user?.name}</span>
               <span className="text-[11px] text-on-surface-variant truncate">Client Portal</span>
@@ -175,11 +190,17 @@ export const CustomerLayout: React.FC = () => {
             <div ref={avatarMenuRef} className="relative">
               <button
                 type="button"
-                onClick={() => setIsAvatarMenuOpen((prev) => !prev)}
-                aria-label="Account menu"
+                onClick={() => {
+                  if (user?.photoDataUrl) {
+                    setIsPhotoViewerOpen(true);
+                  } else {
+                    setIsAvatarMenuOpen((prev) => !prev);
+                  }
+                }}
+                aria-label={user?.photoDataUrl ? "View profile photo" : "Account menu"}
                 aria-expanded={isAvatarMenuOpen}
                 aria-haspopup="true"
-                className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-secondary-fixed ring-offset-1 ring-offset-on-secondary-fixed"
+                className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-secondary-fixed ring-offset-1 ring-offset-on-secondary-fixed cursor-pointer"
               >
                 <UserAvatar user={user} size="sm" className="w-8 h-8" />
               </button>
@@ -200,6 +221,20 @@ export const CustomerLayout: React.FC = () => {
 
                   {/* Options */}
                   <div className="py-1">
+                    {Boolean(user?.photoDataUrl) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAvatarMenuOpen(false);
+                          setIsPhotoViewerOpen(true);
+                        }}
+                        className="w-full px-4 py-2.5 text-left text-xs font-medium text-on-surface hover:bg-surface-container flex items-center gap-2.5 transition-colors cursor-pointer"
+                      >
+                        <Eye className="w-4 h-4 text-primary shrink-0" />
+                        <span>View Photo</span>
+                      </button>
+                    )}
+
                     <NavLink
                       to="/profile"
                       onClick={() => setIsAvatarMenuOpen(false)}
@@ -247,7 +282,7 @@ export const CustomerLayout: React.FC = () => {
 
           <div className="flex items-center gap-4">
             <a
-              href={`tel:${SUPPORT_PHONE.replace(/-/g, '')}`}
+              href={`tel:+1${SUPPORT_PHONE.replace(/-/g, '')}`}
               className="text-xs font-medium text-tertiary hover:underline flex items-center gap-1"
             >
               <PhoneCall className="w-3.5 h-3.5" />
@@ -294,6 +329,14 @@ export const CustomerLayout: React.FC = () => {
           })}
         </div>
       </nav>
+
+      {/* Full-Screen Photo Viewer */}
+      <PhotoViewerModal
+        isOpen={isPhotoViewerOpen}
+        onClose={() => setIsPhotoViewerOpen(false)}
+        photoUrl={user?.photoDataUrl}
+        userName={user?.name}
+      />
     </div>
   );
 };
