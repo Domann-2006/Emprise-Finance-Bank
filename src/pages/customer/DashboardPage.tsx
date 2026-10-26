@@ -1,18 +1,17 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
-  getCustomerAccount,
-  subscribeToAccount,
+  subscribeToAccountByOwner,
   subscribeToTransactions,
 } from '../../services/banking';
 import { BankAccount, TransactionRecord } from '../../types';
-import { formatCentsToUSD, maskAccountNumber, formatDateTime } from '../../utils/format';
+import { formatCentsToUSD, maskAccountNumber } from '../../utils/format';
 import { CardSkeleton, TransactionSkeletonList } from '../../components/common/SkeletonLoader';
-import { TransactionBadge } from '../../components/common/StatusBadge';
+import { TransactionRow } from '../../components/common/TransactionRow';
 import { UserAvatar } from '../../components/common/UserAvatar';
 import { ErrorState } from '../../components/common/ErrorState';
-import { getFriendlyError, withTimeout } from '../../utils/errorMessages';
+import { getFriendlyError } from '../../utils/errorMessages';
 import {
   Wallet,
   ArrowUpRight,
@@ -25,7 +24,6 @@ import {
   FileText,
   ScanLine,
   TrendingUp,
-  CheckCircle2,
   Lock,
   ArrowRight,
   ExternalLink,
@@ -44,18 +42,22 @@ export const DashboardPage: React.FC = () => {
   const [isBalanceVisible, setIsBalanceVisible] = useState(true);
   const [activeFilter, setActiveFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [comingSoonToast, setComingSoonToast] = useState<string | null>(null);
-  const [demoSkeletonMode, setDemoSkeletonMode] = useState(false);
   const [loadError, setLoadError] = useState<{ title: string; message: string } | null>(null);
   const [txnsError, setTxnsError] = useState<{ title: string; message: string } | null>(null);
 
   const unsubscribeTxnsRef = useRef<(() => void) | null>(null);
   const unsubscribeAcctRef = useRef<(() => void) | null>(null);
   const txnsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const acctTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const cleanupListeners = useCallback(() => {
     if (txnsTimeoutRef.current) {
       clearTimeout(txnsTimeoutRef.current);
       txnsTimeoutRef.current = null;
+    }
+    if (acctTimeoutRef.current) {
+      clearTimeout(acctTimeoutRef.current);
+      acctTimeoutRef.current = null;
     }
     if (unsubscribeTxnsRef.current) {
       unsubscribeTxnsRef.current();
@@ -73,62 +75,75 @@ export const DashboardPage: React.FC = () => {
     };
   }, [cleanupListeners]);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(() => {
     if (!user) return;
     cleanupListeners();
     setIsLoadingAccount(true);
+    setIsLoadingTxns(true);
     setLoadError(null);
     setTxnsError(null);
 
-    try {
-      const acct = await withTimeout(getCustomerAccount(user.uid), 10000);
-      setAccount(acct);
+    // 10-second safety timeout for account
+    acctTimeoutRef.current = setTimeout(() => {
       setIsLoadingAccount(false);
+      setLoadError({
+        title: 'Connection Timed Out',
+        message: 'Unable to load account information. Please check your network connection and try again.',
+      });
+    }, 10000);
 
-      if (acct) {
-        setIsLoadingTxns(true);
-        unsubscribeAcctRef.current = subscribeToAccount(acct.id, (updatedAcct) => {
-          setAccount(updatedAcct);
-        });
+    // 10-second safety timeout for transactions
+    txnsTimeoutRef.current = setTimeout(() => {
+      setIsLoadingTxns(false);
+      setTxnsError({
+        title: 'Connection Timed Out',
+        message: 'Unable to load recent activity. Please check your network connection and try again.',
+      });
+    }, 10000);
 
-        // 10-second safety timeout: if no snapshot arrives, stop skeleton and show network ErrorState
-        txnsTimeoutRef.current = setTimeout(() => {
-          setIsLoadingTxns(false);
-          setTxnsError({
-            title: 'Connection Timed Out',
-            message: 'Unable to load recent activity. Please check your network connection and try again.',
-          });
-        }, 10000);
+    // 1. Subscribe to account concurrently
+    unsubscribeAcctRef.current = subscribeToAccountByOwner(
+      user.uid,
+      (acct) => {
+        if (acctTimeoutRef.current) {
+          clearTimeout(acctTimeoutRef.current);
+          acctTimeoutRef.current = null;
+        }
+        setAccount(acct);
+        setIsLoadingAccount(false);
+        setLoadError(null);
+      },
+      (err) => {
+        if (acctTimeoutRef.current) {
+          clearTimeout(acctTimeoutRef.current);
+          acctTimeoutRef.current = null;
+        }
+        setLoadError(getFriendlyError(err));
+        setIsLoadingAccount(false);
+      }
+    );
 
-        unsubscribeTxnsRef.current = subscribeToTransactions(
-          acct.id,
-          (txns) => {
-            if (txnsTimeoutRef.current) {
-              clearTimeout(txnsTimeoutRef.current);
-              txnsTimeoutRef.current = null;
-            }
-            setTransactions(txns);
-            setIsLoadingTxns(false);
-            setTxnsError(null);
-          },
-          (err) => {
-            if (txnsTimeoutRef.current) {
-              clearTimeout(txnsTimeoutRef.current);
-              txnsTimeoutRef.current = null;
-            }
-            setTxnsError(getFriendlyError(err));
-            setIsLoadingTxns(false);
-          }
-        );
-      } else {
+    // 2. Subscribe to transactions concurrently
+    unsubscribeTxnsRef.current = subscribeToTransactions(
+      undefined,
+      (txns) => {
+        if (txnsTimeoutRef.current) {
+          clearTimeout(txnsTimeoutRef.current);
+          txnsTimeoutRef.current = null;
+        }
+        setTransactions(txns);
+        setIsLoadingTxns(false);
+        setTxnsError(null);
+      },
+      (err) => {
+        if (txnsTimeoutRef.current) {
+          clearTimeout(txnsTimeoutRef.current);
+          txnsTimeoutRef.current = null;
+        }
+        setTxnsError(getFriendlyError(err));
         setIsLoadingTxns(false);
       }
-    } catch (err) {
-      cleanupListeners();
-      setLoadError(getFriendlyError(err));
-      setIsLoadingAccount(false);
-      setIsLoadingTxns(false);
-    }
+    );
   }, [user, cleanupListeners]);
 
   useEffect(() => {
@@ -140,13 +155,18 @@ export const DashboardPage: React.FC = () => {
     setTimeout(() => setComingSoonToast(null), 3000);
   };
 
-  const filteredTransactions = transactions.filter((tx) => {
-    if (activeFilter === 'income') return tx.type === 'credit';
-    if (activeFilter === 'expense') return tx.type === 'debit';
-    return true;
-  });
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter((tx) => {
+      if (account && tx.accountId && tx.accountId !== account.id) return false;
+      if (activeFilter === 'income') return tx.type === 'credit';
+      if (activeFilter === 'expense') return tx.type === 'debit';
+      return true;
+    });
+  }, [transactions, account, activeFilter]);
 
-  const recentTransactions = filteredTransactions.slice(0, 5);
+  const recentTransactions = useMemo(() => {
+    return filteredTransactions.slice(0, 5);
+  }, [filteredTransactions]);
 
   return (
     <div className="flex flex-col gap-6 w-full animate-fade-in">
@@ -166,10 +186,8 @@ export const DashboardPage: React.FC = () => {
             <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-primary-container rounded-full ring-2 ring-white" />
           </div>
           <div className="flex flex-col min-w-0">
-            <div className="flex items-center gap-1.5">
-              <h1 className="text-xl font-bold text-on-surface truncate">Welcome back, {user?.name}!</h1>
-              <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
-            </div>
+            <span className="text-xs font-medium text-on-surface-variant">Welcome back</span>
+            <h1 className="text-xl font-bold text-on-surface break-words leading-tight">{user?.name}</h1>
             <p className="text-xs text-on-surface-variant flex items-center gap-1 mt-0.5">
               <span>Member @{user?.username}</span>
               <span>•</span>
@@ -177,15 +195,6 @@ export const DashboardPage: React.FC = () => {
             </p>
           </div>
         </div>
-
-        <button
-          onClick={() => setDemoSkeletonMode(!demoSkeletonMode)}
-          className="text-xs text-on-surface-variant hover:text-primary p-2 rounded-xl bg-surface-container hover:bg-surface-container-high transition-colors flex items-center gap-1"
-          title="Toggle preview skeleton loading state"
-        >
-          <span className="hidden sm:inline">Skeleton:</span>
-          <span className="font-bold">{demoSkeletonMode ? 'ON' : 'OFF'}</span>
-        </button>
       </div>
 
       {/* Primary Account Card (Hero Navy Card matching Stitch Design) */}
@@ -195,7 +204,7 @@ export const DashboardPage: React.FC = () => {
           message={loadError.message}
           onRetry={loadData}
         />
-      ) : isLoadingAccount || demoSkeletonMode ? (
+      ) : isLoadingAccount ? (
         <CardSkeleton />
       ) : account ? (
         <div className="relative overflow-hidden bg-on-secondary-fixed text-on-secondary rounded-2xl p-6 sm:p-7 shadow-lg flex flex-col gap-6">
@@ -408,61 +417,12 @@ export const DashboardPage: React.FC = () => {
             message={txnsError.message}
             onRetry={loadData}
           />
-        ) : isLoadingTxns || demoSkeletonMode ? (
+        ) : isLoadingTxns ? (
           <TransactionSkeletonList count={4} />
         ) : recentTransactions.length > 0 ? (
           <div className="space-y-3">
             {recentTransactions.map((tx) => (
-              <div
-                key={tx.id}
-                className="p-3.5 rounded-xl bg-surface-container-low hover:bg-surface-container transition-colors flex items-center justify-between gap-3"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${
-                      tx.type === 'credit'
-                        ? 'bg-emerald-500/15 text-emerald-700'
-                        : tx.type === 'adjustment'
-                        ? 'bg-blue-500/15 text-blue-700'
-                        : 'bg-slate-200 text-slate-700'
-                    }`}
-                  >
-                    {tx.type === 'credit' ? '+' : '-'}
-                  </div>
-
-                  <div className="flex flex-col min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-on-surface truncate">
-                        {tx.counterpartyName}
-                      </span>
-                      <TransactionBadge type={tx.type} status={tx.status} />
-                    </div>
-                    <span className="text-xs text-on-surface-variant truncate">
-                      {tx.note || 'Direct Account Transfer'}
-                    </span>
-                    <span className="text-[11px] text-outline mt-0.5">
-                      {formatDateTime(tx.createdAt)}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="text-right shrink-0">
-                  <span
-                    className={`text-base font-bold font-ledger-numerical block ${
-                      tx.type === 'credit' ? 'text-emerald-700' : 'text-on-surface'
-                    }`}
-                  >
-                    {tx.type === 'credit'
-                      ? `+${formatCentsToUSD(tx.amountCents)}`
-                      : `-${formatCentsToUSD(tx.amountCents)}`}
-                  </span>
-                  {typeof tx.balanceAfterCents === 'number' && (
-                    <span className="text-[11px] text-on-surface-variant">
-                      Bal: {formatCentsToUSD(tx.balanceAfterCents)}
-                    </span>
-                  )}
-                </div>
-              </div>
+              <TransactionRow key={tx.id} tx={tx} variant="dashboard" />
             ))}
           </div>
         ) : (

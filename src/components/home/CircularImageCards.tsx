@@ -62,6 +62,9 @@ export const CircularImageCards: React.FC = () => {
                   sizes="(max-width: 640px) 200px, 300px"
                   alt={card.image.alt}
                   loading="lazy"
+                  decoding="async"
+                  width={144}
+                  height={144}
                   className="w-full h-full object-cover transition-transform duration-500 hover:scale-110"
                 />
               </div>

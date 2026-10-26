@@ -7,7 +7,7 @@
 import { UserProfile, BankAccount, AccountDirectoryEntry, TransactionRecord, SignUpFormData } from '../types';
 import { generateAccountNumber } from '../utils/format';
 import { hashPin } from '../utils/pin';
-import { ROUTING_NUMBER } from '../config/brand';
+import { ROUTING_NUMBER, APP_NAME } from '../config/brand';
 
 const STORAGE_USERS_KEY = 'emprise_users_v1';
 const STORAGE_ACCOUNTS_KEY = 'emprise_accounts_v1';
@@ -463,15 +463,16 @@ class MockStorageService {
 
     account.balanceCents += delta;
 
+    const isAdd = type === 'add';
     this.transactions.push({
       id: 'tx_adj_' + Math.random().toString(36).substring(2, 9),
       accountId,
       ownerUid: account.ownerUid,
-      type: 'adjustment',
+      type: isAdd ? 'credit' : 'debit',
       amountCents: Math.abs(delta),
-      counterpartyName: 'Institutional Audit Adjustment',
-      counterpartyAccount: 'LEDGER-ADMIN',
-      note: note || 'Administrative balance adjustment',
+      counterpartyName: APP_NAME,
+      counterpartyAccount: 'BANK',
+      note: note.trim() || (isAdd ? 'Bank credit' : 'Bank debit'),
       balanceAfterCents: account.balanceCents,
       status: 'cleared',
       createdAt: new Date().toISOString(),

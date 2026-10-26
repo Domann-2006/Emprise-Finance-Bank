@@ -44,10 +44,29 @@ export default defineConfig(() => {
         workbox: {
           navigateFallback: '/index.html',
           globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+          cleanupOutdatedCaches: true,
+          skipWaiting: true,
+          clientsClaim: true,
           runtimeCaching: [],
         },
       }),
     ],
+    build: {
+      target: 'es2020',
+      cssCodeSplit: true,
+      rollupOptions: {
+        output: {
+          manualChunks(id: string) {
+            if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('node_modules/react-router-dom')) {
+              return 'react-vendor';
+            }
+            if (id.includes('node_modules/firebase') || id.includes('node_modules/@firebase')) {
+              return 'firebase';
+            }
+          },
+        },
+      },
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

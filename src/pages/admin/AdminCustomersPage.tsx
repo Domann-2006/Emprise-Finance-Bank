@@ -601,6 +601,9 @@ export const AdminCustomersPage: React.FC = () => {
                   required
                   className="w-full h-11 px-3.5 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border border-outline-variant/30"
                 />
+                <p className="text-[11px] text-on-surface-variant mt-1">
+                  This change will appear on the customer's history as a credit or debit from Emprise Finance.
+                </p>
               </div>
 
               {/* Projected Balance Live Preview */}

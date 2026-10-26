@@ -33,6 +33,8 @@ export const LazyImage: React.FC<LazyImageProps> = ({
           alt={image.alt}
           loading={priority ? 'eager' : 'lazy'}
           decoding={priority ? 'sync' : 'async'}
+          width={800}
+          height={500}
           onError={() => setHasError(true)}
           className={`w-full h-full object-cover transition-transform duration-500 hover:scale-105 ${className}`}
         />

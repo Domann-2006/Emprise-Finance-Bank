@@ -718,7 +718,7 @@ export const ProfilePage: React.FC = () => {
 
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-on-surface truncate">{user?.name}</h2>
+                <h2 className="text-lg font-bold text-on-surface break-words">{user?.name}</h2>
                 {user?.status && <UserStatusBadge status={user.status} />}
               </div>
               <span className="text-xs font-mono text-primary font-medium block truncate">@{user?.username}</span>

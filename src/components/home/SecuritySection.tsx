@@ -22,6 +22,9 @@ export const SecuritySection: React.FC = () => {
           sizes="100vw"
           alt=""
           loading="lazy"
+          decoding="async"
+          width={1200}
+          height={600}
           className="w-full h-full object-cover filter brightness-125"
         />
       </div>

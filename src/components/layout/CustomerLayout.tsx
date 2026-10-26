@@ -92,8 +92,8 @@ export const CustomerLayout: React.FC = () => {
             {user?.status && <UserStatusBadge status={user.status} />}
           </div>
           <div className="mt-1 flex items-center gap-1.5 text-xs text-on-surface">
-            <ShieldCheck className="w-4 h-4 text-primary" />
-            <span className="font-medium truncate">{user?.name || 'Member'}</span>
+            <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
+            <span className="font-medium break-words leading-tight">{user?.name || 'Member'}</span>
           </div>
           <span className="text-[11px] text-on-surface-variant/80 font-mono">@{user?.username}</span>
         </div>
@@ -146,7 +146,7 @@ export const CustomerLayout: React.FC = () => {
               <UserAvatar user={user} size="sm" className="w-9 h-9" />
             </button>
             <div className="flex flex-col min-w-0">
-              <span className="text-xs font-semibold text-on-surface truncate">{user?.name}</span>
+              <span className="text-xs font-semibold text-on-surface break-words leading-tight">{user?.name}</span>
               <span className="text-[11px] text-on-surface-variant truncate">Client Portal</span>
             </div>
           </div>
@@ -214,7 +214,7 @@ export const CustomerLayout: React.FC = () => {
                   <div className="px-4 py-2.5 border-b border-outline-variant/20 flex items-center gap-2.5">
                     <UserAvatar user={user} size="sm" className="w-8 h-8" />
                     <div className="min-w-0">
-                      <p className="text-xs font-bold text-on-surface truncate">{user?.name || 'Member'}</p>
+                      <p className="text-xs font-bold text-on-surface break-words leading-tight">{user?.name || 'Member'}</p>
                       <p className="text-[11px] font-mono text-primary truncate">@{user?.username || 'user'}</p>
                     </div>
                   </div>

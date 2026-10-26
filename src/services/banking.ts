@@ -32,7 +32,7 @@ import {
 } from '../types';
 import { generateAccountNumber } from '../utils/format';
 import { hashPin } from '../utils/pin';
-import { ROUTING_NUMBER } from '../config/brand';
+import { ROUTING_NUMBER, APP_NAME } from '../config/brand';
 
 /**
  * Generates a verified unique 10-digit account number by checking accountDirectory first
@@ -349,19 +349,68 @@ export function listenToAccount(
 }
 
 /**
+ * Real-time listener for customer bank account by owner UID
+ */
+export function listenToAccountByOwner(
+  uid: string,
+  onUpdate: (account: BankAccount | null) => void,
+  onError?: (err: unknown) => void
+): () => void {
+  const activeDb = db;
+  if (!isFirebaseConfigured() || !activeDb) {
+    if (isMockEnabled) {
+      const acct = mockStorage.getAccountByOwner(uid);
+      onUpdate(acct);
+      const handler = () => {
+        onUpdate(mockStorage.getAccountByOwner(uid));
+      };
+      window.addEventListener('emprise_storage_updated', handler);
+      return () => window.removeEventListener('emprise_storage_updated', handler);
+    }
+    onUpdate(null);
+    return () => {};
+  }
+
+  const q = query(collection(activeDb, 'accounts'), where('ownerUid', '==', uid));
+  const unsubscribe = onSnapshot(
+    q,
+    (snap) => {
+      if (snap.empty) {
+        onUpdate(null);
+      } else {
+        const first = snap.docs[0];
+        onUpdate({ id: first.id, ...first.data() } as BankAccount);
+      }
+    },
+    (err) => {
+      console.error('Account listener error:', err);
+      onError?.(err);
+    }
+  );
+
+  return unsubscribe;
+}
+
+/**
  * Real-time listener for account transactions ledger
  */
 export function listenToTransactions(
-  accountId: string,
+  accountId: string | undefined,
   onUpdate: (transactions: TransactionRecord[]) => void,
   onError?: (err: unknown) => void
 ): () => void {
   const activeDb = db;
   if (!isFirebaseConfigured() || !activeDb) {
     if (isMockEnabled) {
-      onUpdate(mockStorage.getTransactionsForAccount(accountId));
+      const list = accountId
+        ? mockStorage.getTransactionsForAccount(accountId)
+        : mockStorage.getAllTransactions();
+      onUpdate(list);
       const handler = () => {
-        onUpdate(mockStorage.getTransactionsForAccount(accountId));
+        const updated = accountId
+          ? mockStorage.getTransactionsForAccount(accountId)
+          : mockStorage.getAllTransactions();
+        onUpdate(updated);
       };
       window.addEventListener('emprise_storage_updated', handler);
       return () => window.removeEventListener('emprise_storage_updated', handler);
@@ -390,8 +439,8 @@ export function listenToTransactions(
         ...d.data(),
       })) as TransactionRecord[];
 
-      // Filter client-side by accountId
-      const filtered = list.filter((tx) => tx.accountId === accountId);
+      // Filter client-side by accountId if provided
+      const filtered = accountId ? list.filter((tx) => tx.accountId === accountId) : list;
 
       // Sort client-side by createdAt descending (missing/pending values sort newest first)
       filtered.sort((a, b) => {
@@ -708,14 +757,15 @@ export async function editCustomerBalance(
     }
 
     const txRef = doc(collection(activeDb, 'transactions'));
+    const isAdd = direction === 'add';
     const txDoc: Omit<TransactionRecord, 'id'> = {
       accountId: acct.id,
       ownerUid: acct.ownerUid,
-      type: 'adjustment',
+      type: isAdd ? 'credit' : 'debit',
       amountCents: Math.abs(delta),
-      counterpartyName: 'Institutional Audit Adjustment',
-      counterpartyAccount: 'LEDGER-ADMIN',
-      note: note.trim() || 'Administrative Ledger Balance Adjustment',
+      counterpartyName: APP_NAME,
+      counterpartyAccount: 'BANK',
+      note: note.trim() || (isAdd ? 'Bank credit' : 'Bank debit'),
       balanceAfterCents: newBalanceCents,
       status: 'cleared',
       createdAt: serverTimestamp(),
@@ -733,5 +783,6 @@ export async function editCustomerBalance(
 // Aliases for page compatibility
 export const getCustomerAccount = getAccountByOwner;
 export const subscribeToAccount = listenToAccount;
+export const subscribeToAccountByOwner = listenToAccountByOwner;
 export const subscribeToTransactions = listenToTransactions;
 

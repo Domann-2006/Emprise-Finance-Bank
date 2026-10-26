@@ -21,7 +21,10 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSignInClick, childre
           sizes={heroResponsive.sizes}
           alt={HOME_IMAGES.hero.alt}
           loading="eager"
-          decoding="sync"
+          decoding="async"
+          fetchPriority="high"
+          width={1200}
+          height={800}
           className="w-full h-full object-cover object-center scale-105 filter brightness-90"
         />
         {/* Dark Teal-to-Navy Gradient Overlay for Text Contrast */}

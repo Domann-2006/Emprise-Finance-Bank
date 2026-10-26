@@ -163,8 +163,6 @@ export const AdminTransactionsPage: React.FC = () => {
                   className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${
                     tx.type === 'credit'
                       ? 'bg-emerald-500/15 text-emerald-700'
-                      : tx.type === 'adjustment'
-                      ? 'bg-blue-500/15 text-blue-700'
                       : 'bg-slate-200 text-slate-700'
                   }`}
                 >
@@ -192,15 +190,13 @@ export const AdminTransactionsPage: React.FC = () => {
                   className={`text-base font-bold font-ledger-numerical block ${
                     tx.type === 'credit'
                       ? 'text-emerald-700'
-                      : tx.type === 'adjustment'
-                      ? 'text-blue-700'
                       : 'text-on-surface'
                   }`}
                 >
                   {tx.type === 'credit'
                     ? `+${formatCentsToUSD(tx.amountCents)}`
                     : tx.type === 'adjustment'
-                    ? `±${formatCentsToUSD(tx.amountCents)}`
+                    ? formatCentsToUSD(tx.amountCents)
                     : `-${formatCentsToUSD(tx.amountCents)}`}
                 </span>
                 {typeof tx.balanceAfterCents === 'number' && (
