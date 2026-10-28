@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Logo } from '../common/Logo';
-import { CURRENT_YEAR, SUPPORT_PHONE_DISPLAY } from '../../config/brand';
+import { CURRENT_YEAR, SUPPORT_PHONE_DISPLAY, SUPPORT_EMAIL } from '../../config/brand';
 import {
   MapPin,
   FileText,
@@ -172,6 +172,15 @@ export const HomeFooter: React.FC = () => {
               <li>
                 <span className="block text-[11px] uppercase tracking-wider text-[#071c36] font-bold">Fraud Support Hotline</span>
                 <span className="text-xs font-semibold text-[#191c1e]">{SUPPORT_PHONE_DISPLAY}</span>
+              </li>
+              <li>
+                <span className="block text-[11px] uppercase tracking-wider text-[#071c36] font-bold">Email Support</span>
+                <a
+                  href={`mailto:${SUPPORT_EMAIL}`}
+                  className="text-xs font-semibold text-[#006b5f] hover:underline break-all"
+                >
+                  {SUPPORT_EMAIL}
+                </a>
               </li>
               <li className="pt-1">
                 <Link

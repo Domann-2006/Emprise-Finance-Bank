@@ -54,7 +54,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
           </a>
 
           <div className="text-xs text-on-surface-variant space-y-1">
-            <p><strong className="text-on-surface">Email:</strong> {SUPPORT_EMAIL}</p>
+            <p><strong className="text-on-surface">Email:</strong> <a href={`mailto:${SUPPORT_EMAIL}`} className="text-primary hover:underline">{SUPPORT_EMAIL}</a></p>
             <p><strong className="text-on-surface">Hours:</strong> {SUPPORT_HOURS}</p>
           </div>
         </div>

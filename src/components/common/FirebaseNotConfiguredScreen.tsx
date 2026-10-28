@@ -72,7 +72,7 @@ export const FirebaseNotConfiguredScreen: React.FC = () => {
         <div className="flex items-center gap-4">
           <span>Support: {SUPPORT_PHONE_DISPLAY}</span>
           <span>•</span>
-          <span>{SUPPORT_EMAIL}</span>
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:underline">{SUPPORT_EMAIL}</a>
         </div>
       </div>
     </div>
