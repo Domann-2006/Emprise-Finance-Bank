@@ -20,13 +20,24 @@ import {
   CheckCircle2,
   AlertCircle,
   Shield,
+  ShieldCheck,
   Lock,
   KeyRound,
   Check,
   Zap,
   X,
   HelpCircle,
+  Fingerprint,
+  ScanFace,
 } from 'lucide-react';
+import {
+  getBiometricConfig,
+  isHighValueTransfer,
+  isPlatformAuthenticatorAvailable,
+  DEFAULT_BIOMETRIC_THRESHOLD_CENTS,
+  BiometricConfig,
+} from '../../services/biometrics';
+import { BiometricPromptModal } from '../../components/common/BiometricPromptModal';
 
 export const TransferPage: React.FC = () => {
   const { user, setTransferPin, resetTransferPinWithPassword } = useAuth();
@@ -85,6 +96,33 @@ export const TransferPage: React.FC = () => {
     recipientName: string;
     accountNumber: string;
   } | null>(null);
+
+  // Biometric authentication state for high-value transactions
+  const [biometricConfig, setBiometricConfig] = useState<BiometricConfig>(() =>
+    user ? getBiometricConfig(user.uid) : { enabled: false, thresholdCents: DEFAULT_BIOMETRIC_THRESHOLD_CENTS }
+  );
+  const [isPlatformAuthAvailable, setIsPlatformAuthAvailable] = useState<boolean>(true);
+  const [isBiometricModalOpen, setIsBiometricModalOpen] = useState(false);
+  const [isBiometricVerified, setIsBiometricVerified] = useState(false);
+
+  useEffect(() => {
+    isPlatformAuthenticatorAvailable().then(setIsPlatformAuthAvailable);
+    if (user) {
+      setBiometricConfig(getBiometricConfig(user.uid));
+    }
+    const handleBioUpdate = (e: any) => {
+      if (user && e.detail?.uid === user.uid) {
+        setBiometricConfig(e.detail.config);
+      }
+    };
+    window.addEventListener('emprise_biometrics_updated', handleBioUpdate);
+    return () => window.removeEventListener('emprise_biometrics_updated', handleBioUpdate);
+  }, [user]);
+
+  // Reset biometric verification if amount changes
+  useEffect(() => {
+    setIsBiometricVerified(false);
+  }, [amountStr]);
 
   // Load Customer Account
   const loadAccount = async () => {
@@ -212,7 +250,40 @@ export const TransferPage: React.FC = () => {
       return;
     }
 
+    const isHighValue = isHighValueTransfer(cents, biometricConfig.thresholdCents);
+
+    // If high-value transfer and not yet verified via biometrics on a supporting device, request biometric auth
+    if (isHighValue && !isBiometricVerified && isPlatformAuthAvailable) {
+      setIsBiometricModalOpen(true);
+      return;
+    }
+
     // Open PIN prompt modal
+    setPinDigits(['', '', '', '']);
+    setPinError(null);
+    setTransferErrorCode(null);
+    setIsPinModalOpen(true);
+    setTimeout(() => {
+      pinInputRefs.current[0]?.focus();
+    }, 100);
+  };
+
+  const handleBiometricSuccess = () => {
+    setIsBiometricVerified(true);
+    setIsBiometricModalOpen(false);
+    // Proceed directly to PIN confirmation
+    setPinDigits(['', '', '', '']);
+    setPinError(null);
+    setTransferErrorCode(null);
+    setIsPinModalOpen(true);
+    setTimeout(() => {
+      pinInputRefs.current[0]?.focus();
+    }, 100);
+  };
+
+  const handleBiometricFallback = () => {
+    setIsBiometricModalOpen(false);
+    // User chooses PIN fallback
     setPinDigits(['', '', '', '']);
     setPinError(null);
     setTransferErrorCode(null);
@@ -315,6 +386,7 @@ export const TransferPage: React.FC = () => {
       clearAmount();
       clearMemo();
       setVerifiedRecipient(null);
+      setIsBiometricVerified(false);
       setIsPinModalOpen(false);
     } catch (err: any) {
       const code = err?.code || 'UNKNOWN';
@@ -668,6 +740,33 @@ export const TransferPage: React.FC = () => {
           />
         </div>
 
+        {/* High-Value Transaction Biometric Notice */}
+        {isHighValueTransfer(parseUSDToCents(amountStr), biometricConfig.thresholdCents) && parseUSDToCents(amountStr) > 0 && (
+          <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-xs flex items-start gap-3 animate-fade-in">
+            <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-800 flex items-center justify-center shrink-0 mt-0.5">
+              <Fingerprint className="w-4 h-4" />
+            </div>
+            <div className="space-y-1 min-w-0 flex-1">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-amber-950">High-Value Security Protocol Active</span>
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-900 font-bold text-[10px]">
+                  Threshold: {formatCentsToUSD(biometricConfig.thresholdCents || DEFAULT_BIOMETRIC_THRESHOLD_CENTS)}
+                </span>
+              </div>
+              <p className="text-amber-800 leading-relaxed">
+                {isBiometricVerified ? (
+                  <span className="text-emerald-800 font-semibold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    Biometric identity confirmed via WebAuthn. Ready for authorization.
+                  </span>
+                ) : (
+                  'Transfers of this amount require biometric authentication (Touch ID, Face ID, or Windows Hello) before execution to prevent unauthorized account takeover.'
+                )}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Send Action Button */}
         <div
           onClick={() => {
@@ -730,6 +829,36 @@ export const TransferPage: React.FC = () => {
                 </span>
               </div>
             </div>
+
+            {/* Biometric verification status banner */}
+            {isBiometricVerified ? (
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 text-xs font-semibold flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Biometric Identity Verified via WebAuthn</span>
+                </div>
+                <Fingerprint className="w-4 h-4 text-emerald-600 shrink-0" />
+              </div>
+            ) : isHighValueTransfer(parseUSDToCents(amountStr), biometricConfig.thresholdCents) ? (
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs font-semibold flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span className="truncate">High-Value Transfer: 4-digit PIN confirmation</span>
+                </div>
+                {isPlatformAuthAvailable && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPinModalOpen(false);
+                      setIsBiometricModalOpen(true);
+                    }}
+                    className="text-[11px] text-primary underline font-bold cursor-pointer hover:text-primary/80 shrink-0"
+                  >
+                    Use Biometrics
+                  </button>
+                )}
+              </div>
+            ) : null}
 
             {/* Error / Lockout notice */}
             {pinError && (
@@ -1088,6 +1217,20 @@ export const TransferPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* High-Value Biometric Authorization Modal */}
+      {user && (
+        <BiometricPromptModal
+          isOpen={isBiometricModalOpen}
+          onClose={() => setIsBiometricModalOpen(false)}
+          user={user}
+          amountCents={parseUSDToCents(amountStr)}
+          recipientName={verifiedRecipient?.ownerName || 'Verified Member'}
+          recipientAccount={verifiedRecipient?.accountNumber}
+          onSuccess={handleBiometricSuccess}
+          onFallbackToPin={handleBiometricFallback}
+        />
       )}
     </div>
   );
