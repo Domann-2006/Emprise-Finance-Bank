@@ -159,9 +159,9 @@ export const HomeFooter: React.FC = () => {
           </div>
 
           {/* Column 4: Contact Us */}
-          <div className="space-y-3">
+          <div className="space-y-3 min-w-0">
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#071c36] flex items-center gap-1.5">
-              <Phone className="w-3.5 h-3.5 text-[#006b5f]" />
+              <Phone className="w-3.5 h-3.5 text-[#006b5f] shrink-0" />
               <span>Contact Us</span>
             </h3>
             <ul className="space-y-2 text-xs text-[#3c4947]">
@@ -173,11 +173,11 @@ export const HomeFooter: React.FC = () => {
                 <span className="block text-[11px] uppercase tracking-wider text-[#071c36] font-bold">Fraud Support Hotline</span>
                 <span className="text-xs font-semibold text-[#191c1e]">{SUPPORT_PHONE_DISPLAY}</span>
               </li>
-              <li>
+              <li className="min-w-0">
                 <span className="block text-[11px] uppercase tracking-wider text-[#071c36] font-bold">Email Support</span>
                 <a
                   href={`mailto:${SUPPORT_EMAIL}`}
-                  className="text-xs font-semibold text-[#006b5f] hover:underline break-all"
+                  className="text-xs font-semibold text-[#006b5f] hover:underline break-all block leading-snug"
                 >
                   {SUPPORT_EMAIL}
                 </a>

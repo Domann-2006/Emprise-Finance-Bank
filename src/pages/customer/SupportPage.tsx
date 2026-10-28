@@ -300,17 +300,17 @@ export const SupportPage: React.FC = () => {
           {/* Phone */}
           <a
             href={`tel:+1${SUPPORT_PHONE.replace(/-/g, '')}`}
-            className="p-3.5 rounded-xl bg-surface-container-low hover:bg-surface-container transition-all flex items-center justify-between gap-3"
+            className="p-3.5 rounded-xl bg-surface-container-low hover:bg-surface-container transition-all flex items-center justify-between gap-3 min-w-0 overflow-hidden"
           >
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
               <div className="w-10 h-10 rounded-full bg-tertiary-fixed text-tertiary flex items-center justify-center shrink-0">
                 <Phone className="w-5 h-5" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <span className="text-sm font-bold text-on-surface block">{SUPPORT_PHONE_DISPLAY}</span>
               </div>
             </div>
-            <span className="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-semibold">
+            <span className="px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-semibold shrink-0 whitespace-nowrap">
               Call
             </span>
           </a>
@@ -318,18 +318,18 @@ export const SupportPage: React.FC = () => {
           {/* Email */}
           <a
             href={`mailto:${SUPPORT_EMAIL}`}
-            className="p-3.5 rounded-xl bg-surface-container-low hover:bg-surface-container transition-all flex items-center justify-between gap-3"
+            className="p-3.5 rounded-xl bg-surface-container-low hover:bg-surface-container transition-all flex items-center justify-between gap-3 min-w-0 overflow-hidden"
           >
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
               <div className="w-10 h-10 rounded-full bg-secondary-fixed text-on-secondary-fixed-variant flex items-center justify-center shrink-0">
                 <Mail className="w-5 h-5" />
               </div>
-              <div className="min-w-0">
-                <span className="text-sm font-bold text-on-surface block truncate">{SUPPORT_EMAIL}</span>
-                <span className="text-xs text-on-surface-variant">Guaranteed fast response</span>
+              <div className="min-w-0 flex-1">
+                <span className="text-sm font-bold text-on-surface block break-all leading-snug">{SUPPORT_EMAIL}</span>
+                <span className="text-xs text-on-surface-variant block">Guaranteed fast response</span>
               </div>
             </div>
-            <span className="px-3 py-1.5 rounded-lg bg-surface-container-high text-on-surface text-xs font-semibold">
+            <span className="px-3 py-1.5 rounded-lg bg-surface-container-high text-on-surface text-xs font-semibold shrink-0 whitespace-nowrap">
               Email
             </span>
           </a>

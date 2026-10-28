@@ -42,9 +42,9 @@ export const SessionTimeoutModal: React.FC = () => {
           For your financial protection, your online banking session was securely closed after 15 minutes of inactivity. Any pending changes or unsubmitted requests were safely aborted.
         </p>
 
-        <div className="p-3 bg-surface-container rounded-xl text-xs text-on-surface-variant flex items-center gap-2">
-          <span className="font-semibold text-on-surface">Need help?</span>
-          <span>Contact {APP_NAME} Member Care at {SUPPORT_PHONE}</span>
+        <div className="p-3 bg-surface-container rounded-xl text-xs text-on-surface-variant flex flex-wrap items-center gap-2 min-w-0">
+          <span className="font-semibold text-on-surface shrink-0">Need help?</span>
+          <span className="min-w-0 break-words">Contact {APP_NAME} Member Care at {SUPPORT_PHONE}</span>
         </div>
 
         <div className="mt-2 flex flex-col gap-2">

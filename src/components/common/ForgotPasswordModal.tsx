@@ -40,22 +40,22 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen
           To maintain strict financial compliance and safeguard your funds against unauthorized takeover, {APP_NAME} credentials cannot be reset through automated links without voice biometric verification.
         </p>
 
-        <div className="p-4 bg-surface-container-low rounded-xl flex flex-col gap-3 border border-outline-variant/30">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">Direct Member Hotline</span>
-            <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold">24/7 Available</span>
+        <div className="p-4 bg-surface-container-low rounded-xl flex flex-col gap-3 border border-outline-variant/30 min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant min-w-0">Direct Member Hotline</span>
+            <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold shrink-0 whitespace-nowrap">24/7 Available</span>
           </div>
 
           <a
             href={`tel:+1${SUPPORT_PHONE.replace(/-/g, '')}`}
-            className="text-lg font-bold text-primary hover:underline flex items-center gap-2"
+            className="text-lg font-bold text-primary hover:underline flex items-center gap-2 min-w-0"
           >
-            <span>{SUPPORT_PHONE_DISPLAY}</span>
+            <span className="break-all">{SUPPORT_PHONE_DISPLAY}</span>
           </a>
 
-          <div className="text-xs text-on-surface-variant space-y-1">
-            <p><strong className="text-on-surface">Email:</strong> <a href={`mailto:${SUPPORT_EMAIL}`} className="text-primary hover:underline">{SUPPORT_EMAIL}</a></p>
-            <p><strong className="text-on-surface">Hours:</strong> {SUPPORT_HOURS}</p>
+          <div className="text-xs text-on-surface-variant space-y-1 min-w-0">
+            <p className="min-w-0"><strong className="text-on-surface shrink-0">Email:</strong> <a href={`mailto:${SUPPORT_EMAIL}`} className="text-primary hover:underline break-all">{SUPPORT_EMAIL}</a></p>
+            <p className="min-w-0"><strong className="text-on-surface shrink-0">Hours:</strong> {SUPPORT_HOURS}</p>
           </div>
         </div>
 

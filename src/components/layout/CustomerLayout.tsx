@@ -121,12 +121,12 @@ export const CustomerLayout: React.FC = () => {
         </nav>
 
         {/* Support Direct Line */}
-        <div className="p-4 mx-4 mb-4 rounded-xl bg-surface-container-low border border-outline-variant/20 text-xs flex flex-col gap-1.5">
-          <div className="flex items-center gap-1.5 text-primary font-semibold">
-            <PhoneCall className="w-3.5 h-3.5" />
-            <span>24/7 Member Care</span>
+        <div className="p-4 mx-4 mb-4 rounded-xl bg-surface-container-low border border-outline-variant/20 text-xs flex flex-col gap-1.5 min-w-0">
+          <div className="flex items-center gap-1.5 text-primary font-semibold min-w-0">
+            <PhoneCall className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">24/7 Member Care</span>
           </div>
-          <span className="font-mono text-on-surface font-medium">{SUPPORT_PHONE}</span>
+          <span className="font-mono text-on-surface font-medium truncate">{SUPPORT_PHONE}</span>
         </div>
 
         {/* User Account Drawer / Sign Out */}
@@ -280,20 +280,20 @@ export const CustomerLayout: React.FC = () => {
             </span>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 min-w-0">
             <a
               href={`tel:+1${SUPPORT_PHONE.replace(/-/g, '')}`}
-              className="text-xs font-medium text-tertiary hover:underline flex items-center gap-1"
+              className="text-xs font-medium text-tertiary hover:underline flex items-center gap-1 shrink-0 whitespace-nowrap"
             >
-              <PhoneCall className="w-3.5 h-3.5" />
+              <PhoneCall className="w-3.5 h-3.5 shrink-0" />
               <span>{SUPPORT_PHONE}</span>
             </a>
-            <div className="h-4 w-px bg-outline-variant/40" />
+            <div className="h-4 w-px bg-outline-variant/40 shrink-0" />
             <button
               onClick={() => navigate('/support')}
-              className="text-xs text-on-surface-variant hover:text-on-surface flex items-center gap-1"
+              className="text-xs text-on-surface-variant hover:text-on-surface flex items-center gap-1 shrink-0 whitespace-nowrap"
             >
-              <HelpCircle className="w-3.5 h-3.5" />
+              <HelpCircle className="w-3.5 h-3.5 shrink-0" />
               <span>FAQ & Support</span>
             </button>
           </div>

@@ -69,10 +69,10 @@ export const FirebaseNotConfiguredScreen: React.FC = () => {
       {/* Footer */}
       <div className="max-w-4xl mx-auto w-full flex flex-col sm:flex-row items-center justify-between text-xs text-on-surface-variant/70 gap-2 border-t border-outline-variant/20 pt-6">
         <div>© {new Date().getFullYear()} {APP_NAME}. All rights reserved.</div>
-        <div className="flex items-center gap-4">
-          <span>Support: {SUPPORT_PHONE_DISPLAY}</span>
-          <span>•</span>
-          <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:underline">{SUPPORT_EMAIL}</a>
+        <div className="flex flex-wrap items-center justify-center sm:justify-end gap-x-4 gap-y-1 min-w-0">
+          <span className="shrink-0 whitespace-nowrap">Support: {SUPPORT_PHONE_DISPLAY}</span>
+          <span className="shrink-0">•</span>
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:underline break-all min-w-0">{SUPPORT_EMAIL}</a>
         </div>
       </div>
     </div>
