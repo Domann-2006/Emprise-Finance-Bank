@@ -21,6 +21,7 @@ import { UserProfile, UserRole, UserStatus, SignUpFormData } from '../types';
 import { mockStorage } from '../services/mockStorage';
 import { createNewCustomerAccount } from '../services/banking';
 import { hashPin, isWeakPin } from '../utils/pin';
+import { biometricService } from '../features/biometrics/biometricService';
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -445,6 +446,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setUser((prev) => (prev ? { ...prev, hasPin: true } : null));
       localStorage.removeItem(`emprise:pinfail:${user.uid}`);
+      await biometricService.disable(user.uid);
       return { success: true };
     } catch (err: any) {
       console.error('Failed to set transfer PIN:', err);
@@ -501,6 +503,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setUser((prev) => (prev ? { ...prev, hasPin: true } : null));
       localStorage.removeItem(`emprise:pinfail:${user.uid}`);
+      await biometricService.disable(user.uid);
       return { success: true };
     } catch (err: any) {
       console.error('Failed to change transfer PIN:', err);
@@ -557,6 +560,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setUser((prev) => (prev ? { ...prev, hasPin: true } : null));
       localStorage.removeItem(`emprise:pinfail:${user.uid}`);
+      await biometricService.disable(user.uid);
       return { success: true };
     } catch (err: any) {
       console.error('Failed to reset transfer PIN with password:', err);

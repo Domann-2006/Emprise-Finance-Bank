@@ -8,6 +8,7 @@ import { UserProfile, BankAccount, AccountDirectoryEntry, TransactionRecord, Sig
 import { generateAccountNumber } from '../utils/format';
 import { hashPin } from '../utils/pin';
 import { ROUTING_NUMBER, APP_NAME } from '../config/brand';
+import { TransferAuthorization } from '../features/transfer-auth/types';
 
 const STORAGE_USERS_KEY = 'emprise_users_v1';
 const STORAGE_ACCOUNTS_KEY = 'emprise_accounts_v1';
@@ -488,9 +489,9 @@ class MockStorageService {
     recipientAccountNumber: string;
     amountCents: number;
     note: string;
-    pin: string;
+    authorization: TransferAuthorization;
   }): Promise<{ senderNewBalanceCents: number; recipientName: string }> {
-    const { senderAccountId, senderUid, recipientAccountNumber, amountCents, note, pin } = params;
+    const { senderAccountId, senderUid, recipientAccountNumber, amountCents, note, authorization } = params;
 
     if (amountCents <= 0) {
       throw new Error('Transfer amount must be greater than zero.');
@@ -500,9 +501,18 @@ class MockStorageService {
     const senderUser = this.users.find(u => u.uid === senderUid);
     const storedHash = this.getPinHash(senderUid);
     if (senderUser?.hasPin && storedHash) {
-      const computedHash = await hashPin(pin, senderUid);
+      const computedHash = authorization.method === 'pin'
+        ? await hashPin(authorization.pin, senderUid)
+        : authorization.pinHash;
       if (storedHash !== computedHash) {
-        throw new Error('Incorrect PIN.');
+        if (authorization.method === 'biometric') {
+          const err: any = new Error('Biometric authorization is stale. Please re-enter your PIN.');
+          err.code = 'BIOMETRIC_STALE';
+          throw err;
+        }
+        const err: any = new Error('Incorrect PIN.');
+        err.code = 'WRONG_PIN';
+        throw err;
       }
     }
 

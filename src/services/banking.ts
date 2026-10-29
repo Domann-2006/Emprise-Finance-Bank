@@ -33,6 +33,7 @@ import {
 import { generateAccountNumber } from '../utils/format';
 import { hashPin } from '../utils/pin';
 import { ROUTING_NUMBER, APP_NAME } from '../config/brand';
+import { TransferAuthorization } from '../features/transfer-auth/types';
 
 /**
  * Generates a verified unique 10-digit account number by checking accountDirectory first
@@ -474,19 +475,26 @@ export function listenToTransactions(
 }
 
 /**
- * Verifies a 4-digit transfer PIN by writing to the Firestore `pinChecks` collection.
- * If this throws a Firestore 'permission-denied' error, throws an Error with code 'WRONG_PIN'.
+ * Verifies transfer authorization by writing to the Firestore `pinChecks` collection.
+ * If this throws a Firestore 'permission-denied' error:
+ *   - for 'pin' method, throws an Error with code 'WRONG_PIN'
+ *   - for 'biometric' method, throws an Error with code 'BIOMETRIC_STALE'
  * If it throws a network-type error (unavailable, deadline-exceeded), throws code 'NETWORK'.
- * In mock mode, verifies against the mock-stored hash and throws 'WRONG_PIN' on mismatch.
+ * In mock mode, verifies against the mock-stored hash.
  */
-export async function verifyTransferPin(pin: string, uid: string): Promise<void> {
-  const hash = await hashPin(pin, uid);
+export async function verifyTransferPin(auth: TransferAuthorization, uid: string): Promise<void> {
+  const hash = auth.method === 'pin' ? await hashPin(auth.pin, uid) : auth.pinHash;
 
   const activeDb = db;
   if (!isFirebaseConfigured() || !activeDb) {
     if (isMockEnabled) {
       const storedHash = mockStorage.getPinHash(uid);
       if (!storedHash || storedHash !== hash) {
+        if (auth.method === 'biometric') {
+          const bioErr: any = new Error('Biometric authorization is stale. Please re-enter your PIN.');
+          bioErr.code = 'BIOMETRIC_STALE';
+          throw bioErr;
+        }
         const err: any = new Error('Incorrect PIN.');
         err.code = 'WRONG_PIN';
         throw err;
@@ -503,6 +511,11 @@ export async function verifyTransferPin(pin: string, uid: string): Promise<void>
     const errMsg = (err?.message || '').toLowerCase();
 
     if (err?.code === 'permission-denied' || errCode === 'permission-denied') {
+      if (auth.method === 'biometric') {
+        const bioErr: any = new Error('Biometric authorization is stale. Please re-enter your PIN.');
+        bioErr.code = 'BIOMETRIC_STALE';
+        throw bioErr;
+      }
       const pinErr: any = new Error('Incorrect PIN.');
       pinErr.code = 'WRONG_PIN';
       throw pinErr;
@@ -538,9 +551,9 @@ export async function executeTransferTransaction(params: {
   recipientAccountNumber: string;
   amountCents: number;
   note: string;
-  pin: string;
+  authorization: TransferAuthorization;
 }): Promise<{ senderNewBalanceCents: number; recipientName: string }> {
-  const { senderAccountId, senderUid, recipientAccountNumber, amountCents, note, pin } = params;
+  const { senderAccountId, senderUid, recipientAccountNumber, amountCents, note, authorization } = params;
 
   const activeDb = db;
   if (!isFirebaseConfigured() || !activeDb) {
@@ -553,7 +566,9 @@ export async function executeTransferTransaction(params: {
   }
 
   const cleanRecipientAcct = recipientAccountNumber.trim();
-  const pinHash = await hashPin(pin, senderUid);
+  const pinHash = authorization.method === 'pin'
+    ? await hashPin(authorization.pin, senderUid)
+    : authorization.pinHash;
 
   try {
     return await runTransaction(activeDb, async (transaction) => {

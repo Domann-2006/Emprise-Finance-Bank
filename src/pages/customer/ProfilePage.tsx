@@ -35,20 +35,8 @@ import {
   Camera,
   Upload,
   Trash2,
-  Fingerprint,
-  ScanFace,
-  ShieldCheck,
 } from 'lucide-react';
-import {
-  getBiometricConfig,
-  saveBiometricConfig,
-  removeBiometricCredential,
-  isPlatformAuthenticatorAvailable,
-  THRESHOLD_OPTIONS,
-  DEFAULT_BIOMETRIC_THRESHOLD_CENTS,
-  BiometricConfig,
-} from '../../services/biometrics';
-import { BiometricPromptModal } from '../../components/common/BiometricPromptModal';
+import { BiometricSettingsCard } from '../../components/profile/BiometricSettingsCard';
 import { isWeakPin } from '../../utils/pin';
 import { useDraftState } from '../../hooks/useDraftState';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
@@ -134,77 +122,6 @@ export const ProfilePage: React.FC = () => {
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinSuccess, setPinSuccess] = useState<string | null>(null);
   const [isPinSubmitting, setIsPinSubmitting] = useState(false);
-
-  // Biometric authentication state (WebAuthn)
-  const [biometricConfig, setBiometricConfig] = useState<BiometricConfig>(() =>
-    user ? getBiometricConfig(user.uid) : { enabled: false, thresholdCents: DEFAULT_BIOMETRIC_THRESHOLD_CENTS }
-  );
-  const [isPlatformAuthAvailable, setIsPlatformAuthAvailable] = useState<boolean>(true);
-  const [isBioEnrollModalOpen, setIsBioEnrollModalOpen] = useState(false);
-  const [isBioTestModalOpen, setIsBioTestModalOpen] = useState(false);
-  const [bioFeedback, setBioFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [showRemoveBioConfirm, setShowRemoveBioConfirm] = useState(false);
-
-  useEffect(() => {
-    isPlatformAuthenticatorAvailable().then(setIsPlatformAuthAvailable);
-    if (user) {
-      setBiometricConfig(getBiometricConfig(user.uid));
-    }
-    const handleBioUpdate = (e: any) => {
-      if (user && e.detail?.uid === user.uid) {
-        setBiometricConfig(e.detail.config);
-      }
-    };
-    window.addEventListener('emprise_biometrics_updated', handleBioUpdate);
-    return () => window.removeEventListener('emprise_biometrics_updated', handleBioUpdate);
-  }, [user]);
-
-  const handleBioEnrollSuccess = () => {
-    if (!user) return;
-    const updated = getBiometricConfig(user.uid);
-    setBiometricConfig(updated);
-    setIsBioEnrollModalOpen(false);
-    setBioFeedback({
-      type: 'success',
-      message: 'Device biometrics enrolled successfully! High-value transfers will now request biometric authorization.',
-    });
-  };
-
-  const handleBioTestSuccess = () => {
-    if (!user) return;
-    const updated = getBiometricConfig(user.uid);
-    setBiometricConfig(updated);
-    setIsBioTestModalOpen(false);
-    setBioFeedback({
-      type: 'success',
-      message: 'Biometric sensor test passed! Your device authenticator is working correctly.',
-    });
-  };
-
-  const handleRemoveBiometrics = () => {
-    if (!user) return;
-    removeBiometricCredential(user.uid);
-    setBiometricConfig(getBiometricConfig(user.uid));
-    setShowRemoveBioConfirm(false);
-    setBioFeedback({
-      type: 'success',
-      message: 'Biometric authorization disabled on this device.',
-    });
-  };
-
-  const handleThresholdChange = (newThresholdCents: number) => {
-    if (!user) return;
-    const updated = saveBiometricConfig(user.uid, { thresholdCents: newThresholdCents });
-    setBiometricConfig(updated);
-    setBioFeedback({
-      type: 'success',
-      message: `Step-up threshold set to ${
-        newThresholdCents === 0
-          ? 'all transfers'
-          : THRESHOLD_OPTIONS.find((o) => o.value === newThresholdCents)?.label || `$${(newThresholdCents / 100).toFixed(2)}`
-      }.`,
-    });
-  };
 
   const resetProfileFields = () => {
     setEmail(user?.email || '');
@@ -560,14 +477,14 @@ export const ProfilePage: React.FC = () => {
     setIsPinSubmitting(false);
 
     if (res.success) {
-      setPinSuccess('Transfer PIN updated successfully.');
+      setPinSuccess('Transfer PIN updated. Biometric payment was turned off because your PIN changed. Turn it on again in Security.');
       setTimeout(() => {
         setPinModalType(null);
         setPinCurrent('');
         setPinNew('');
         setPinConfirm('');
         setPinSuccess(null);
-      }, 1500);
+      }, 2500);
     } else {
       setPinError(res.error || 'Failed to update transfer PIN.');
     }
@@ -601,14 +518,14 @@ export const ProfilePage: React.FC = () => {
     setIsPinSubmitting(false);
 
     if (res.success) {
-      setPinSuccess('Transfer PIN reset successfully.');
+      setPinSuccess('Transfer PIN reset. Biometric payment was turned off because your PIN changed. Turn it on again in Security.');
       setTimeout(() => {
         setPinModalType(null);
         setPinPassword('');
         setPinNew('');
         setPinConfirm('');
         setPinSuccess(null);
-      }, 1500);
+      }, 2500);
     } else {
       setPinError(res.error || 'Password verification failed.');
     }
@@ -1282,185 +1199,8 @@ export const ProfilePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Biometric Authentication (WebAuthn) Card */}
-      <div className="bg-surface-container-lowest rounded-2xl p-6 border border-outline-variant/30 shadow-xs flex flex-col gap-4">
-        <div className="flex items-center justify-between pb-3 border-b border-outline-variant/20">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-secondary-container/40 flex items-center justify-center text-primary">
-              <Fingerprint className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-on-surface">Biometric Authentication (WebAuthn)</h3>
-              <p className="text-[11px] text-on-surface-variant">
-                Hardware-backed biometric verification for high-value transactions
-              </p>
-            </div>
-          </div>
-          <span
-            className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-              biometricConfig.enabled
-                ? 'bg-emerald-500/10 text-emerald-800'
-                : isPlatformAuthAvailable
-                ? 'bg-sky-500/10 text-sky-800'
-                : 'bg-surface-container-high text-on-surface-variant'
-            }`}
-          >
-            {biometricConfig.enabled
-              ? 'Active'
-              : isPlatformAuthAvailable
-              ? 'Device Supported'
-              : 'Not Supported'}
-          </span>
-        </div>
-
-        {/* Bio Feedback */}
-        {bioFeedback && (
-          <div
-            className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between gap-2 animate-fade-in ${
-              bioFeedback.type === 'success'
-                ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-800'
-                : 'bg-error-container text-on-error-container'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              {bioFeedback.type === 'success' ? (
-                <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-error shrink-0" />
-              )}
-              <span>{bioFeedback.message}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setBioFeedback(null)}
-              className="text-on-surface-variant hover:text-on-surface p-1"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-
-        <div className="text-xs text-on-surface-variant leading-relaxed">
-          Protect outgoing transactions with your device's native biometric sensors (Apple Touch ID, Face ID, Windows Hello, or Android Biometrics). WebAuthn ensures biometric templates never leave your local hardware secure enclave.
-        </div>
-
-        {/* Step-Up Threshold Selector */}
-        <div className="p-4 bg-surface-container-low rounded-xl space-y-2">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <label htmlFor="bio-threshold" className="font-semibold text-on-surface block text-xs">
-                Step-Up Biometric Threshold
-              </label>
-              <span className="text-[11px] text-on-surface-variant">
-                Transfers meeting or exceeding this amount will require biometric scanning.
-              </span>
-            </div>
-            <select
-              id="bio-threshold"
-              value={biometricConfig.thresholdCents}
-              onChange={(e) => handleThresholdChange(Number(e.target.value))}
-              className="h-9 px-3 bg-surface-container-lowest border border-outline-variant/40 rounded-lg text-xs font-medium text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20"
-            >
-              {THRESHOLD_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Device Status & Actions */}
-        {biometricConfig.enabled ? (
-          <div className="flex flex-col gap-3 pt-1">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-              <div className="p-3 bg-surface-container-low rounded-xl">
-                <span className="text-on-surface-variant block text-[11px]">Enrolled Device</span>
-                <span className="font-semibold text-on-surface block mt-0.5 truncate">
-                  {biometricConfig.credentialName || 'Platform Authenticator'}
-                </span>
-              </div>
-              <div className="p-3 bg-surface-container-low rounded-xl">
-                <span className="text-on-surface-variant block text-[11px]">Enrolled On</span>
-                <span className="font-semibold text-on-surface block mt-0.5">
-                  {biometricConfig.createdAt ? new Date(biometricConfig.createdAt).toLocaleDateString() : 'Active'}
-                </span>
-              </div>
-              <div className="p-3 bg-surface-container-low rounded-xl">
-                <span className="text-on-surface-variant block text-[11px]">Last Verification</span>
-                <span className="font-semibold text-on-surface block mt-0.5">
-                  {biometricConfig.lastVerifiedAt ? new Date(biometricConfig.lastVerifiedAt).toLocaleDateString() : 'Never'}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setIsBioTestModalOpen(true)}
-                className="h-9 px-4 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Fingerprint className="w-3.5 h-3.5 text-primary" />
-                <span>Test Biometric Sensor</span>
-              </button>
-
-              {!showRemoveBioConfirm ? (
-                <button
-                  type="button"
-                  onClick={() => setShowRemoveBioConfirm(true)}
-                  className="h-9 px-3 rounded-xl text-xs font-medium text-error hover:bg-error-container/20 transition-colors cursor-pointer"
-                >
-                  Remove Device
-                </button>
-              ) : (
-                <div className="flex items-center gap-2 animate-fade-in">
-                  <span className="text-xs text-on-surface-variant">Disable biometrics?</span>
-                  <button
-                    type="button"
-                    onClick={handleRemoveBiometrics}
-                    className="h-8 px-3 rounded-lg bg-error hover:bg-error/90 text-on-error text-xs font-semibold"
-                  >
-                    Confirm
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowRemoveBioConfirm(false)}
-                    className="h-8 px-2.5 rounded-lg border border-outline-variant/40 text-xs text-on-surface-variant hover:bg-surface-container"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-            <div className="text-xs">
-              <span className="font-semibold text-on-surface block">
-                {isPlatformAuthAvailable
-                  ? 'Platform authenticator available on this device'
-                  : 'Platform biometrics not available on this device'}
-              </span>
-              <span className="text-on-surface-variant block mt-0.5">
-                {isPlatformAuthAvailable
-                  ? 'Enable Touch ID, Face ID, or Windows Hello for instant one-touch verification.'
-                  : 'You will continue to authorize transactions using your 4-digit Transfer PIN.'}
-              </span>
-            </div>
-
-            {isPlatformAuthAvailable && (
-              <button
-                type="button"
-                onClick={() => setIsBioEnrollModalOpen(true)}
-                className="h-9 px-4 rounded-xl bg-primary hover:bg-primary/90 text-on-primary text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all shrink-0 cursor-pointer"
-              >
-                <ScanFace className="w-3.5 h-3.5" />
-                <span>Enable Device Biometrics</span>
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      {/* Biometric Authentication Settings Card */}
+      {user && <BiometricSettingsCard user={user} />}
 
       {/* PIN Management Modal */}
       {pinModalType && (
@@ -1862,28 +1602,6 @@ export const ProfilePage: React.FC = () => {
         photoUrl={user?.photoDataUrl}
         userName={user?.name}
       />
-
-      {/* Biometric Enrollment Modal */}
-      {isBioEnrollModalOpen && user && (
-        <BiometricPromptModal
-          isOpen={isBioEnrollModalOpen}
-          onClose={() => setIsBioEnrollModalOpen(false)}
-          user={user}
-          mode="enroll"
-          onSuccess={handleBioEnrollSuccess}
-        />
-      )}
-
-      {/* Biometric Test Modal */}
-      {isBioTestModalOpen && user && (
-        <BiometricPromptModal
-          isOpen={isBioTestModalOpen}
-          onClose={() => setIsBioTestModalOpen(false)}
-          user={user}
-          mode="test"
-          onSuccess={handleBioTestSuccess}
-        />
-      )}
     </div>
   );
 };
