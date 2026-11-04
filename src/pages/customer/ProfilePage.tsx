@@ -82,7 +82,7 @@ export const ProfilePage: React.FC = () => {
   const [routingNumber, setRoutingNumber, clearRoutingNumberDraft] = useDraftState(
     user?.uid,
     'profile_routing',
-    user?.routingNumber || ROUTING_NUMBER
+    user?.routingNumber || ''
   );
   const [street, setStreet, clearStreetDraft] = useDraftState(user?.uid, 'profile_street', user?.address?.street || '');
   const [apt, setApt, clearAptDraft] = useDraftState(user?.uid, 'profile_apt', user?.address?.apt || '');
@@ -126,7 +126,7 @@ export const ProfilePage: React.FC = () => {
   const resetProfileFields = () => {
     setEmail(user?.email || '');
     setPhone(user?.phone || '');
-    setRoutingNumber(user?.routingNumber || ROUTING_NUMBER);
+    setRoutingNumber(user?.routingNumber || '');
     setStreet(user?.address?.street || '');
     setApt(user?.address?.apt || '');
     setCity(user?.address?.city || '');
@@ -148,7 +148,7 @@ export const ProfilePage: React.FC = () => {
     if (user && !isEditing) {
       setEmail(user.email || '');
       setPhone(user.phone || '');
-      setRoutingNumber(user.routingNumber || ROUTING_NUMBER);
+      setRoutingNumber(user.routingNumber || '');
       setStreet(user.address?.street || '');
       setApt(user.address?.apt || '');
       setCity(user.address?.city || '');

@@ -27,11 +27,11 @@ export const AdminCreateAccountPage: React.FC = () => {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [dob, setDob] = useState('');
-  const [password, setPassword] = useState('Password123!');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [accountType, setAccountType] = useState<AccountType>('Checking');
-  const [openingBalanceStr, setOpeningBalanceStr] = useState('500.00');
-  const [routingNumber, setRoutingNumber] = useState(ROUTING_NUMBER);
+  const [accountType, setAccountType] = useState<AccountType | ''>('');
+  const [openingBalanceStr, setOpeningBalanceStr] = useState('');
+  const [routingNumber, setRoutingNumber] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,14 +69,19 @@ export const AdminCreateAccountPage: React.FC = () => {
       setError('Password must be at least 6 characters.');
       return;
     }
-
-    const cleanRouting = routingNumber.trim();
-    if (!cleanRouting || !/^\d{9}$/.test(cleanRouting)) {
-      setError('Routing number must be exactly 9 numeric digits.');
+    if (!accountType) {
+      setError('Please choose an account type.');
       return;
     }
 
-    const openingCents = parseUSDToCents(openingBalanceStr);
+    const trimmedRouting = routingNumber.trim();
+    if (trimmedRouting && !/^\d{9}$/.test(trimmedRouting)) {
+      setError('Routing number must be exactly 9 numeric digits.');
+      return;
+    }
+    const cleanRouting = trimmedRouting || ROUTING_NUMBER;
+
+    const openingCents = openingBalanceStr.trim() ? parseUSDToCents(openingBalanceStr) : 0;
     if (openingCents < 0) {
       setError('Opening balance cannot be negative.');
       return;
@@ -110,7 +115,7 @@ export const AdminCreateAccountPage: React.FC = () => {
           username: cleanUsername,
           email,
           dob,
-          accountType,
+          accountType: accountType as AccountType,
           openingCents,
           routingNumber: cleanRouting,
         });
@@ -123,6 +128,16 @@ export const AdminCreateAccountPage: React.FC = () => {
           balanceCents: openingCents,
           accountType,
         });
+
+        // Reset form inputs after successful creation
+        setName('');
+        setUsername('');
+        setEmail('');
+        setDob('');
+        setPassword('');
+        setAccountType('');
+        setOpeningBalanceStr('');
+        setRoutingNumber('');
       } catch (err: any) {
         let msg = err.message || 'Error creating customer account.';
         if (err.code === 'auth/email-already-in-use') {
@@ -141,7 +156,7 @@ export const AdminCreateAccountPage: React.FC = () => {
           username: cleanUsername,
           email: email.trim(),
           dob,
-          accountType,
+          accountType: accountType as AccountType,
           openingBalanceCents: openingCents,
           routingNumber: cleanRouting,
         });
@@ -154,6 +169,16 @@ export const AdminCreateAccountPage: React.FC = () => {
           balanceCents: openingCents,
           accountType,
         });
+
+        // Reset form inputs after successful creation
+        setName('');
+        setUsername('');
+        setEmail('');
+        setDob('');
+        setPassword('');
+        setAccountType('');
+        setOpeningBalanceStr('');
+        setRoutingNumber('');
       } catch (err: any) {
         setError(err.message || 'Error creating mock user.');
       } finally {
@@ -170,9 +195,10 @@ export const AdminCreateAccountPage: React.FC = () => {
     setUsername('');
     setEmail('');
     setDob('');
-    setPassword('Password123!');
-    setOpeningBalanceStr('500.00');
-    setRoutingNumber(ROUTING_NUMBER);
+    setPassword('');
+    setAccountType('');
+    setOpeningBalanceStr('');
+    setRoutingNumber('');
     setSuccessResult(null);
   };
 
@@ -344,6 +370,7 @@ export const AdminCreateAccountPage: React.FC = () => {
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Set a temporary password"
                     required
                     className="w-full h-11 pl-3.5 pr-10 bg-surface-container-low rounded-xl text-sm text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border border-outline-variant/30"
                   />
@@ -361,10 +388,16 @@ export const AdminCreateAccountPage: React.FC = () => {
             {/* Account Type Selection */}
             <div className="space-y-1.5 pt-1">
               <label className="text-xs font-semibold text-on-surface">Account Product Type *</label>
+              {error === 'Please choose an account type.' && (
+                <p className="text-xs text-error font-medium">Please choose an account type.</p>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
-                  onClick={() => setAccountType('Checking')}
+                  onClick={() => {
+                    setAccountType('Checking');
+                    if (error === 'Please choose an account type.') setError(null);
+                  }}
                   className={`p-3 rounded-xl border text-left transition-all ${
                     accountType === 'Checking'
                       ? 'border-primary-container bg-primary-container/10 ring-2 ring-primary-container/20'
@@ -377,7 +410,10 @@ export const AdminCreateAccountPage: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() => setAccountType('Savings')}
+                  onClick={() => {
+                    setAccountType('Savings');
+                    if (error === 'Please choose an account type.') setError(null);
+                  }}
                   className={`p-3 rounded-xl border text-left transition-all ${
                     accountType === 'Savings'
                       ? 'border-primary-container bg-primary-container/10 ring-2 ring-primary-container/20'
@@ -393,7 +429,7 @@ export const AdminCreateAccountPage: React.FC = () => {
             {/* Routing Number */}
             <div className="space-y-1">
               <label className="text-xs font-semibold text-on-surface" htmlFor="custRouting">
-                Electronic Routing Number (9 Digits) *
+                Electronic Routing Number (9 Digits)
               </label>
               <input
                 id="custRouting"
@@ -402,8 +438,7 @@ export const AdminCreateAccountPage: React.FC = () => {
                 maxLength={9}
                 value={routingNumber}
                 onChange={(e) => setRoutingNumber(e.target.value.replace(/\D/g, '').slice(0, 9))}
-                placeholder={ROUTING_NUMBER}
-                required
+                placeholder="e.g. 000000000"
                 className="w-full h-11 px-3.5 bg-surface-container-low rounded-xl text-sm font-mono text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border border-outline-variant/30"
               />
             </div>
@@ -422,6 +457,7 @@ export const AdminCreateAccountPage: React.FC = () => {
                   min="0"
                   value={openingBalanceStr}
                   onChange={(e) => setOpeningBalanceStr(e.target.value)}
+                  placeholder="0.00"
                   className="w-full h-11 pl-8 pr-14 bg-surface-container-low rounded-xl text-sm font-mono font-bold text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border border-outline-variant/30"
                 />
                 <span className="absolute right-3 text-xs font-bold text-on-surface-variant">USD</span>

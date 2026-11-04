@@ -38,29 +38,36 @@ export const SignUpPage: React.FC = () => {
 
   const [draftData, setDraftData, clearSignUpDraft] = useDraftState<SignUpSafeDraft | null>(
     null,
-    'signup_form',
+    'signup_form_v2',
     null
   );
 
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
-  const [formData, setFormData] = useState<SignUpFormData>(() => ({
-    firstName: draftData?.firstName || '',
-    lastName: draftData?.lastName || '',
-    dob: draftData?.dob || '',
-    isOver18: draftData?.isOver18 ?? true,
-    contactEmail: draftData?.contactEmail || '',
-    phone: draftData?.phone || '',
-    street: draftData?.street || '',
-    apt: draftData?.apt || '',
-    city: draftData?.city || '',
-    state: draftData?.state || 'IL',
-    zip: draftData?.zip || '',
-    govId: '', // NEVER draft or persist govId
-    username: draftData?.username || '',
-    password: '', // NEVER draft or persist password
-    accountType: draftData?.accountType || 'Checking',
-    routingNumber: draftData?.routingNumber || ROUTING_NUMBER,
-  }));
+  const [formData, setFormData] = useState<SignUpFormData>(() => {
+    // When restoring a saved draft, ignore a stored state value of 'IL',
+    // a stored routingNumber equal to ROUTING_NUMBER, and a stored accountType
+    const restoredState = draftData?.state === 'IL' ? '' : (draftData?.state || '');
+    const restoredRouting = draftData?.routingNumber === ROUTING_NUMBER ? '' : (draftData?.routingNumber || '');
+
+    return {
+      firstName: draftData?.firstName || '',
+      lastName: draftData?.lastName || '',
+      dob: draftData?.dob || '',
+      isOver18: draftData?.isOver18 ?? false,
+      contactEmail: draftData?.contactEmail || '',
+      phone: draftData?.phone || '',
+      street: draftData?.street || '',
+      apt: draftData?.apt || '',
+      city: draftData?.city || '',
+      state: restoredState,
+      zip: draftData?.zip || '',
+      govId: '', // NEVER draft or persist govId
+      username: draftData?.username || '',
+      password: '', // NEVER draft or persist password
+      accountType: '',
+      routingNumber: restoredRouting,
+    };
+  });
 
   // Sync non-sensitive form fields to debounced draft
   useEffect(() => {
@@ -159,9 +166,17 @@ export const SignUpPage: React.FC = () => {
       setError('Password must be at least 6 characters.');
       return;
     }
-    const cleanRouting = (formData.routingNumber || ROUTING_NUMBER).trim();
-    if (!/^\d{9}$/.test(cleanRouting)) {
+    if (!formData.accountType) {
+      setError('Please choose an account type.');
+      return;
+    }
+    const cleanRouting = (formData.routingNumber || '').trim();
+    if (cleanRouting && !/^\d{9}$/.test(cleanRouting)) {
       setError('Routing number must be exactly 9 numeric digits.');
+      return;
+    }
+    if (!formData.isOver18) {
+      setError('Please certify that you are at least 18 years old and agree to the terms.');
       return;
     }
 
@@ -172,10 +187,17 @@ export const SignUpPage: React.FC = () => {
       return;
     }
 
+    const finalRouting = cleanRouting || ROUTING_NUMBER;
+
     setIsSubmitting(true);
     try {
-      const result = await signUp(formData);
+      const submissionData: SignUpFormData = {
+        ...formData,
+        routingNumber: finalRouting,
+      };
+      const result = await signUp(submissionData);
       if (result.success) {
+        setFormData((prev) => ({ ...prev, routingNumber: finalRouting }));
         clearSignUpDraft();
         setCreatedAccountNumber(result.accountNumber);
         setCurrentStep(4); // Success step!
@@ -500,8 +522,6 @@ export const SignUpPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Gov ID Field - STRICTLY AS REQUESTED:
-                  "For the "Gov ID" field, accept any made-up value, do NOT store it, and add helper text "Do not enter a real SSN"." */}
               <div className="space-y-1 p-3.5 bg-surface-container-low rounded-xl border border-outline-variant/30">
                 <label className="text-xs font-semibold text-on-surface block" htmlFor="govId">
                   Government ID / Tax ID Verification
@@ -514,10 +534,6 @@ export const SignUpPage: React.FC = () => {
                   placeholder="e.g. 999-00-1234"
                   className="w-full h-11 px-3.5 bg-surface-container-lowest rounded-xl text-sm font-mono text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 border border-outline-variant/30"
                 />
-                <p className="text-[11px] font-medium text-amber-700 mt-1 flex items-center gap-1">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                  <span>Do not enter a real SSN. Enter any test value (this is not stored).</span>
-                </p>
               </div>
             </div>
 
@@ -558,10 +574,16 @@ export const SignUpPage: React.FC = () => {
             {/* Account Type Selection */}
             <div className="space-y-2">
               <label className="text-xs font-semibold text-on-surface">Select Primary Account Type *</label>
+              {error === 'Please choose an account type.' && (
+                <p className="text-xs text-error font-medium">Please choose an account type.</p>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
                   type="button"
-                  onClick={() => setFormData({ ...formData, accountType: 'Checking' })}
+                  onClick={() => {
+                    setFormData({ ...formData, accountType: 'Checking' });
+                    if (error === 'Please choose an account type.') setError(null);
+                  }}
                   className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between ${
                     formData.accountType === 'Checking'
                       ? 'border-primary-container bg-primary-container/10 ring-2 ring-primary-container/30'
@@ -582,7 +604,10 @@ export const SignUpPage: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={() => setFormData({ ...formData, accountType: 'Savings' })}
+                  onClick={() => {
+                    setFormData({ ...formData, accountType: 'Savings' });
+                    if (error === 'Please choose an account type.') setError(null);
+                  }}
                   className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between ${
                     formData.accountType === 'Savings'
                       ? 'border-primary-container bg-primary-container/10 ring-2 ring-primary-container/30'
@@ -606,20 +631,19 @@ export const SignUpPage: React.FC = () => {
             {/* Routing Number */}
             <div className="space-y-1">
               <label className="text-xs font-semibold text-on-surface" htmlFor="reg-routing">
-                Electronic Routing Number (9 Digits) *
+                Electronic Routing Number (9 Digits)
               </label>
               <input
                 id="reg-routing"
                 type="text"
                 inputMode="numeric"
                 maxLength={9}
-                value={formData.routingNumber || ROUTING_NUMBER}
+                value={formData.routingNumber}
                 onChange={(e) => {
                   const val = e.target.value.replace(/\D/g, '').slice(0, 9);
                   setFormData({ ...formData, routingNumber: val });
                 }}
-                placeholder={ROUTING_NUMBER}
-                required
+                placeholder="e.g. 000000000"
                 className="w-full h-11 px-3.5 bg-surface-container-low rounded-xl text-sm font-mono text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border border-outline-variant/30"
               />
               <p className="text-[11px] text-on-surface-variant">
@@ -697,7 +721,8 @@ export const SignUpPage: React.FC = () => {
                 id="agree"
                 type="checkbox"
                 required
-                defaultChecked
+                checked={formData.isOver18}
+                onChange={(e) => setFormData({ ...formData, isOver18: e.target.checked })}
                 className="mt-0.5 rounded text-primary-container focus:ring-primary-container"
               />
               <label htmlFor="agree">
@@ -758,7 +783,7 @@ export const SignUpPage: React.FC = () => {
               </span>
               <h2 className="text-2xl sm:text-3xl font-bold text-on-surface">Welcome to {APP_NAME}!</h2>
               <p className="text-sm text-on-surface-variant max-w-sm mx-auto">
-                Your new {formData.accountType} account has been created with a $0.00 opening balance and verified routing.
+                Your new {formData.accountType ? `${formData.accountType} ` : ''}account has been created with a $0.00 opening balance and verified routing.
               </p>
             </div>
 

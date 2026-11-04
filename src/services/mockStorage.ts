@@ -4,7 +4,7 @@
  * are not provided in .env, enabling immediate testing of all UI flows.
  */
 
-import { UserProfile, BankAccount, AccountDirectoryEntry, TransactionRecord, SignUpFormData } from '../types';
+import { UserProfile, BankAccount, AccountDirectoryEntry, TransactionRecord, SignUpFormData, AccountType } from '../types';
 import { generateAccountNumber } from '../utils/format';
 import { hashPin } from '../utils/pin';
 import { ROUTING_NUMBER, APP_NAME } from '../config/brand';
@@ -344,7 +344,7 @@ class MockStorageService {
       id: accountId,
       ownerUid: uid,
       accountNumber: newAccountNumber,
-      type: formData.accountType || 'Checking',
+      type: (formData.accountType || 'Checking') as AccountType,
       balanceCents: 0,
       status: 'active',
       createdAt: new Date().toISOString(),

@@ -110,7 +110,7 @@ export async function createNewCustomerAccount(
     id: accountId,
     ownerUid: uid,
     accountNumber,
-    type: formData.accountType || 'Checking',
+    type: (formData.accountType || 'Checking') as AccountType,
     balanceCents: 0,
     status: 'active',
     createdAt: serverTimestamp(),

@@ -47,9 +47,9 @@ export const AdminCustomersPage: React.FC = () => {
   const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
   const [targetAccount, setTargetAccount] = useState<BankAccount | null>(null);
   const [targetUser, setTargetUser] = useState<UserProfile | null>(null);
-  const [adjustmentDirection, setAdjustmentDirection] = useState<'add' | 'deduct'>('add');
-  const [adjustmentAmountStr, setAdjustmentAmountStr] = useState('100.00');
-  const [adjustmentNote, setAdjustmentNote] = useState('Administrative ledger adjustment');
+  const [adjustmentDirection, setAdjustmentDirection] = useState<'add' | 'deduct' | null>(null);
+  const [adjustmentAmountStr, setAdjustmentAmountStr] = useState('');
+  const [adjustmentNote, setAdjustmentNote] = useState('');
   const [isSubmittingAdjustment, setIsSubmittingAdjustment] = useState(false);
   const [adjustmentError, setAdjustmentError] = useState<string | null>(null);
 
@@ -128,6 +128,15 @@ export const AdminCustomersPage: React.FC = () => {
     });
   }, [users, accounts, statusFilter, searchQuery]);
 
+  // Close Edit Balance Modal
+  const closeBalanceModal = () => {
+    setAdjustmentDirection(null);
+    setAdjustmentAmountStr('');
+    setAdjustmentNote('');
+    setAdjustmentError(null);
+    setIsBalanceModalOpen(false);
+  };
+
   // Open Edit Balance Modal
   const openBalanceModal = (userItem: UserProfile) => {
     const acct = accounts.find((a) => a.ownerUid === userItem.uid);
@@ -137,9 +146,9 @@ export const AdminCustomersPage: React.FC = () => {
     }
     setTargetUser(userItem);
     setTargetAccount(acct);
-    setAdjustmentDirection('add');
-    setAdjustmentAmountStr('100.00');
-    setAdjustmentNote('Administrative ledger balance adjustment');
+    setAdjustmentDirection(null);
+    setAdjustmentAmountStr('');
+    setAdjustmentNote('');
     setAdjustmentError(null);
     setIsBalanceModalOpen(true);
   };
@@ -150,9 +159,10 @@ export const AdminCustomersPage: React.FC = () => {
     const deltaCents = parseUSDToCents(adjustmentAmountStr);
     if (adjustmentDirection === 'add') {
       return targetAccount.balanceCents + deltaCents;
-    } else {
+    } else if (adjustmentDirection === 'deduct') {
       return Math.max(0, targetAccount.balanceCents - deltaCents);
     }
+    return targetAccount.balanceCents;
   }, [targetAccount, adjustmentAmountStr, adjustmentDirection]);
 
   // Submit Balance Adjustment
@@ -161,14 +171,14 @@ export const AdminCustomersPage: React.FC = () => {
     if (!targetAccount) return;
     setAdjustmentError(null);
 
-    const deltaCents = parseUSDToCents(adjustmentAmountStr);
-    if (deltaCents <= 0) {
-      setAdjustmentError('Please enter an adjustment amount greater than $0.00.');
+    if (!adjustmentDirection) {
+      setAdjustmentError('Choose Add or Deduct.');
       return;
     }
 
-    if (!adjustmentNote.trim()) {
-      setAdjustmentError('Audit note is required for ledger tracking.');
+    const deltaCents = parseUSDToCents(adjustmentAmountStr);
+    if (deltaCents <= 0) {
+      setAdjustmentError('Please enter an adjustment amount greater than $0.00.');
       return;
     }
 
@@ -190,7 +200,7 @@ export const AdminCustomersPage: React.FC = () => {
       setAccounts((prev) =>
         prev.map((a) => (a.id === targetAccount.id ? { ...a, balanceCents: result.newBalanceCents } : a))
       );
-      setIsBalanceModalOpen(false);
+      closeBalanceModal();
       triggerToast(
         `Balance adjusted for ${targetUser?.name}. New balance: ${formatCentsToUSD(result.newBalanceCents)}`
       );
@@ -511,7 +521,7 @@ export const AdminCustomersPage: React.FC = () => {
                 </div>
               </div>
               <button
-                onClick={() => setIsBalanceModalOpen(false)}
+                onClick={closeBalanceModal}
                 className="w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container"
               >
                 ✕
@@ -541,7 +551,10 @@ export const AdminCustomersPage: React.FC = () => {
                 <div className="grid grid-cols-2 p-1 rounded-xl bg-surface-container gap-1">
                   <button
                     type="button"
-                    onClick={() => setAdjustmentDirection('add')}
+                    onClick={() => {
+                      setAdjustmentDirection('add');
+                      if (adjustmentError === 'Choose Add or Deduct.') setAdjustmentError(null);
+                    }}
                     className={`h-10 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
                       adjustmentDirection === 'add'
                         ? 'bg-surface-container-lowest text-primary shadow-xs'
@@ -553,7 +566,10 @@ export const AdminCustomersPage: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAdjustmentDirection('deduct')}
+                    onClick={() => {
+                      setAdjustmentDirection('deduct');
+                      if (adjustmentError === 'Choose Add or Deduct.') setAdjustmentError(null);
+                    }}
                     className={`h-10 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
                       adjustmentDirection === 'deduct'
                         ? 'bg-surface-container-lowest text-error shadow-xs'
@@ -564,6 +580,9 @@ export const AdminCustomersPage: React.FC = () => {
                     <span>- Deduct Funds</span>
                   </button>
                 </div>
+                {!adjustmentDirection && (
+                  <p className="text-[11px] text-on-surface-variant font-medium">Choose Add or Deduct.</p>
+                )}
               </div>
 
               {/* Amount Input */}
@@ -580,6 +599,7 @@ export const AdminCustomersPage: React.FC = () => {
                     min="0.01"
                     value={adjustmentAmountStr}
                     onChange={(e) => setAdjustmentAmountStr(e.target.value)}
+                    placeholder="0.00"
                     required
                     className="w-full h-11 pl-8 pr-16 bg-surface-container-low rounded-xl text-sm font-mono font-bold text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border border-outline-variant/30"
                   />
@@ -590,15 +610,14 @@ export const AdminCustomersPage: React.FC = () => {
               {/* Required Audit Note */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-on-surface" htmlFor="adjNote">
-                  Required Ledger Note / Reason *
+                  Ledger Note / Reason
                 </label>
                 <input
                   id="adjNote"
                   type="text"
                   value={adjustmentNote}
                   onChange={(e) => setAdjustmentNote(e.target.value)}
-                  placeholder="e.g. Courtesy fee refund or account correction"
-                  required
+                  placeholder="Optional note shown on the customer's history"
                   className="w-full h-11 px-3.5 bg-surface-container-low rounded-xl text-xs text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border border-outline-variant/30"
                 />
                 <p className="text-[11px] text-on-surface-variant mt-1">
@@ -618,18 +637,20 @@ export const AdminCustomersPage: React.FC = () => {
               <div className="grid grid-cols-2 gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsBalanceModalOpen(false)}
+                  onClick={closeBalanceModal}
                   className="h-11 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface font-semibold text-xs"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingAdjustment}
+                  disabled={isSubmittingAdjustment || !adjustmentDirection}
                   className="h-11 rounded-xl bg-primary-container hover:bg-primary text-on-primary font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
                 >
                   {isSubmittingAdjustment ? (
                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : !adjustmentDirection ? (
+                    <span>Choose Add or Deduct.</span>
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4" />

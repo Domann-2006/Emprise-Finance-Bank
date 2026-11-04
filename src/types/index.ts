@@ -82,7 +82,7 @@ export interface SignUpFormData {
   // Step 3: Account Setup
   username: string;
   password: string;
-  accountType: AccountType;
+  accountType: '' | 'Checking' | 'Savings';
   routingNumber?: string;
 }
 
