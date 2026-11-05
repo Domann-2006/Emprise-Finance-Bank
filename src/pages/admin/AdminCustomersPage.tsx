@@ -11,6 +11,7 @@ import { TableRowSkeleton } from '../../components/common/SkeletonLoader';
 import { editCustomerBalance, updateCustomerStatus } from '../../services/banking';
 import { ErrorState } from '../../components/common/ErrorState';
 import { getFriendlyError, withTimeout } from '../../utils/errorMessages';
+import { PermanentDeleteDialog } from '../../components/admin/PermanentDeleteDialog';
 import {
   Search,
   Wallet,
@@ -55,6 +56,8 @@ export const AdminCustomersPage: React.FC = () => {
 
   // Status & Delete Dialog
   const [deleteWarningUser, setDeleteWarningUser] = useState<UserProfile | null>(null);
+  const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<UserProfile | null>(null);
+  const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
 
   // Tooltip notice for Reset PW
@@ -106,11 +109,19 @@ export const AdminCustomersPage: React.FC = () => {
     setTimeout(() => setFeedbackToast(null), 3000);
   };
 
-  // Filtered customer list
+  // Closed users count for chip and bulk delete
+  const closedUsers = useMemo(() => users.filter((u) => u.status === 'closed'), [users]);
+  const closedCount = closedUsers.length;
+
+  // Filtered customer list (decluttered: 'all' excludes 'closed')
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
-      // Status filter
-      if (statusFilter !== 'all' && u.status !== statusFilter) return false;
+      // Status filter: 'all' shows ONLY active and disabled per declutter requirement
+      if (statusFilter === 'all') {
+        if (u.status === 'closed') return false;
+      } else if (u.status !== statusFilter) {
+        return false;
+      }
 
       // Search filter
       if (searchQuery.trim()) {
@@ -226,7 +237,7 @@ export const AdminCustomersPage: React.FC = () => {
     }
   };
 
-  // Soft Delete (Close Account)
+  // Delete (Soft delete, status closed)
   const handleConfirmDelete = async () => {
     if (!deleteWarningUser) return;
     try {
@@ -238,10 +249,31 @@ export const AdminCustomersPage: React.FC = () => {
         prev.map((a) => (a.ownerUid === deleteWarningUser.uid ? { ...a, status: 'closed' } : a))
       );
       setDeleteWarningUser(null);
-      triggerToast(`Account permanently closed for ${deleteWarningUser.name}.`);
+      triggerToast(`Account closed for ${deleteWarningUser.name}.`);
     } catch (err: any) {
       triggerToast(`Error closing account: ${err.message}`);
     }
+  };
+
+  // Permanent Delete Handlers
+  const handleDeletedSingle = (uid: string, deletedTransactions: number) => {
+    const target = users.find((u) => u.uid === uid);
+    setUsers((prev) => prev.filter((u) => u.uid !== uid));
+    setAccounts((prev) => prev.filter((a) => a.ownerUid !== uid));
+    setPermanentDeleteTarget(null);
+    triggerToast(
+      `Permanently deleted ${target?.name || 'customer'} (${deletedTransactions} transaction records removed).`
+    );
+  };
+
+  const handleDeletedBulk = (deletedUids: string[], totalDeletedTx: number) => {
+    const uidSet = new Set(deletedUids);
+    setUsers((prev) => prev.filter((u) => !uidSet.has(u.uid)));
+    setAccounts((prev) => prev.filter((a) => !uidSet.has(a.ownerUid)));
+    setIsBulkDeleteOpen(false);
+    triggerToast(
+      `Permanently deleted ${deletedUids.length} closed account(s) (${totalDeletedTx} transaction records removed).`
+    );
   };
 
   // Reset Customer Transfer PIN
@@ -340,10 +372,30 @@ export const AdminCustomersPage: React.FC = () => {
                 : 'text-on-surface-variant hover:text-on-surface'
             }`}
           >
-            Closed
+            Closed ({closedCount})
           </button>
         </div>
       </div>
+
+      {/* Bulk Delete Bar when 'Closed' filter is selected and closed accounts exist */}
+      {statusFilter === 'closed' && closedUsers.length > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl">
+          <div className="flex items-center gap-2.5 text-xs text-rose-900 font-semibold">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>
+              {closedUsers.length} closed account{closedUsers.length !== 1 ? 's' : ''} eligible for permanent deletion.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsBulkDeleteOpen(true)}
+            className="px-4 py-2 rounded-xl bg-error hover:bg-error/90 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition-all shrink-0"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Delete all closed ({closedUsers.length})</span>
+          </button>
+        </div>
+      )}
 
       {/* Customer Cards List */}
       <div className="space-y-4">
@@ -429,7 +481,7 @@ export const AdminCustomersPage: React.FC = () => {
                 </div>
 
                 {/* Actions Grid (Edit Balance, Enable/Disable, Reset Transfer PIN, Reset PW, Delete) */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 border-t border-outline-variant/20 text-xs">
+                <div className={`grid grid-cols-2 ${customer.status === 'closed' ? 'sm:grid-cols-6' : 'sm:grid-cols-5'} gap-2 pt-1 border-t border-outline-variant/20 text-xs`}>
                   {/* 1. Edit Balance */}
                   <button
                     onClick={() => openBalanceModal(customer)}
@@ -478,15 +530,34 @@ export const AdminCustomersPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* 5. Delete (Soft delete, status "closed") */}
-                  <button
-                    onClick={() => setDeleteWarningUser(customer)}
-                    disabled={customer.status === 'closed'}
-                    className="h-10 rounded-xl bg-error-container/20 text-error hover:bg-error-container/40 font-semibold flex items-center justify-center gap-1.5 transition-all disabled:opacity-40"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    <span>{customer.status === 'closed' ? 'Closed' : 'Delete'}</span>
-                  </button>
+                  {/* 5. Delete (Soft delete, status "closed") OR for closed: 2-column grid next to disabled "Closed" button */}
+                  {customer.status === 'closed' ? (
+                    <div className="col-span-2 sm:col-span-2 grid grid-cols-2 gap-2">
+                      <button
+                        disabled
+                        className="h-10 rounded-xl bg-error-container/20 text-error font-semibold flex items-center justify-center gap-1.5 opacity-40 cursor-not-allowed"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        <span>Closed</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPermanentDeleteTarget(customer)}
+                        className="h-10 rounded-xl bg-error hover:bg-error/90 text-white font-semibold flex items-center justify-center gap-1.5 transition-all shadow-xs"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        <span>Delete forever</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setDeleteWarningUser(customer)}
+                      className="h-10 rounded-xl bg-error-container/20 text-error hover:bg-error-container/40 font-semibold flex items-center justify-center gap-1.5 transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>Delete</span>
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -703,6 +774,29 @@ export const AdminCustomersPage: React.FC = () => {
           </div>
         </div>
       )}
+      {/* ================= PERMANENT DELETE DIALOG (SINGLE) ================= */}
+      <PermanentDeleteDialog
+        isOpen={!!permanentDeleteTarget}
+        onClose={() => setPermanentDeleteTarget(null)}
+        mode="single"
+        targetUser={permanentDeleteTarget}
+        targetAccount={
+          permanentDeleteTarget
+            ? accounts.find((a) => a.ownerUid === permanentDeleteTarget.uid) || null
+            : null
+        }
+        onDeletedSingle={handleDeletedSingle}
+      />
+
+      {/* ================= PERMANENT DELETE DIALOG (BULK) ================= */}
+      <PermanentDeleteDialog
+        isOpen={isBulkDeleteOpen}
+        onClose={() => setIsBulkDeleteOpen(false)}
+        mode="bulk"
+        bulkUsers={closedUsers}
+        accounts={accounts}
+        onDeletedBulk={handleDeletedBulk}
+      />
     </div>
   );
 };

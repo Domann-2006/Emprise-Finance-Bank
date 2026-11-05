@@ -18,6 +18,7 @@ import {
   serverTimestamp,
   onSnapshot,
   increment,
+  deleteDoc,
   Firestore,
 } from 'firebase/firestore';
 import { db, auth, isFirebaseConfigured, isMockEnabled } from './firebase';
@@ -800,4 +801,103 @@ export const getCustomerAccount = getAccountByOwner;
 export const subscribeToAccount = listenToAccount;
 export const subscribeToAccountByOwner = listenToAccountByOwner;
 export const subscribeToTransactions = listenToTransactions;
+
+async function runInChunks<T>(items: T[], chunkSize: number, fn: (item: T) => Promise<void>): Promise<void> {
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    await Promise.all(chunk.map((item) => fn(item)));
+  }
+}
+
+/**
+ * Permanently deletes a closed customer account and cleans up all associated records.
+ * Transactions owned by other customers referencing this customer are preserved.
+ */
+export async function permanentlyDeleteCustomer(uid: string): Promise<{ deletedTransactions: number }> {
+  const activeDb = db;
+  if (!isFirebaseConfigured() || !activeDb) {
+    if (isMockEnabled) {
+      return mockStorage.permanentlyDeleteUser(uid);
+    }
+    throw new Error('Firebase is not configured.');
+  }
+
+  // a. Refuse if uid equals the signed-in admin's own uid
+  const currentAdminUid = auth?.currentUser?.uid;
+  if (currentAdminUid && currentAdminUid === uid) {
+    throw new Error('You cannot delete your own admin account.');
+  }
+
+  // Read users/{uid}
+  const userRef = doc(activeDb, 'users', uid);
+  const userSnap = await getDoc(userRef);
+  if (userSnap.exists()) {
+    const userData = userSnap.data() as UserProfile;
+    if (userData.role === 'admin') {
+      throw new Error('Admin accounts cannot be deleted.');
+    }
+    if (userData.status !== 'closed') {
+      throw new Error('Only closed accounts can be permanently deleted.');
+    }
+  }
+  // If the users document does not exist, continue with cleanup (retry of half-finished delete)
+
+  // b. getDocs(query(collection(db,'accounts'), where('ownerUid','==',uid))) to collect account ids and account numbers
+  const accountsSnap = await getDocs(
+    query(collection(activeDb, 'accounts'), where('ownerUid', '==', uid))
+  );
+  const accountIds: string[] = [];
+  const accountNumbers: string[] = [];
+  accountsSnap.forEach((d) => {
+    accountIds.push(d.id);
+    const data = d.data() as BankAccount;
+    if (data.accountNumber) {
+      accountNumbers.push(data.accountNumber);
+    }
+  });
+
+  // c. getDocs(query(collection(db,'transactions'), where('ownerUid','==',uid))) to collect customer's own transaction records
+  const txSnap = await getDocs(
+    query(collection(activeDb, 'transactions'), where('ownerUid', '==', uid))
+  );
+  const txDocRefs = txSnap.docs.map((d) => d.ref);
+
+  // d. Delete with deleteDoc, running up to 10 at a time with Promise.all:
+  // 1. Every transaction found in step c
+  await runInChunks(txDocRefs, 10, async (ref) => {
+    await deleteDoc(ref);
+  });
+
+  // 2. accountDirectory/{accountNumber} for each account number
+  await runInChunks(accountNumbers, 10, async (accNum) => {
+    try {
+      await deleteDoc(doc(activeDb, 'accountDirectory', accNum));
+    } catch {
+      // ignore not found
+    }
+  });
+
+  // 3. each accounts/{id}
+  await runInChunks(accountIds, 10, async (acctId) => {
+    await deleteDoc(doc(activeDb, 'accounts', acctId));
+  });
+
+  // 4. pins/{uid}, pinAttempts/{uid} and profilePhotos/{uid} (ignore not-found)
+  const secondaryCollections = ['pins', 'pinAttempts', 'profilePhotos'];
+  await Promise.all(
+    secondaryCollections.map(async (collName) => {
+      try {
+        await deleteDoc(doc(activeDb, collName, uid));
+      } catch {
+        // ignore not found
+      }
+    })
+  );
+
+  // e. Delete users/{uid} LAST so if anything fails earlier, user card remains visible to retry
+  await deleteDoc(userRef);
+
+  // f. Return number of transactions deleted
+  return { deletedTransactions: txDocRefs.length };
+}
 

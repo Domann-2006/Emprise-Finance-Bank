@@ -268,6 +268,50 @@ class MockStorageService {
     this.saveState();
   }
 
+  permanentlyDeleteUser(uid: string): { deletedTransactions: number } {
+    const user = this.users.find((u) => u.uid === uid);
+    if (user?.role === 'admin') {
+      throw new Error('Admin accounts cannot be deleted.');
+    }
+    if (user && user.status !== 'closed') {
+      throw new Error('Only closed accounts can be permanently deleted.');
+    }
+
+    const userAccounts = this.accounts.filter((a) => a.ownerUid === uid);
+    const accountNumbers = new Set(userAccounts.map((a) => a.accountNumber));
+    const accountIds = new Set(userAccounts.map((a) => a.id));
+
+    // Remove from directory
+    for (const accNum of accountNumbers) {
+      delete this.directory[accNum];
+    }
+    for (const [k, v] of Object.entries(this.directory)) {
+      if (accountIds.has(v.accountId)) {
+        delete this.directory[k];
+      }
+    }
+
+    // Delete transactions owned by that uid
+    const deletedCount = this.transactions.filter((t) => t.ownerUid === uid).length;
+    this.transactions = this.transactions.filter((t) => t.ownerUid !== uid);
+
+    // Delete accounts
+    this.accounts = this.accounts.filter((a) => a.ownerUid !== uid);
+
+    // Delete user
+    this.users = this.users.filter((u) => u.uid !== uid);
+
+    // Delete PIN
+    delete this.pins[uid];
+
+    this.saveState();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('emprise_storage_updated'));
+    }
+
+    return { deletedTransactions: deletedCount };
+  }
+
   getUsers(): UserProfile[] {
     return [...this.users];
   }

@@ -43,7 +43,17 @@ const KNOWN_BUSINESS_MESSAGES = [
   'too many failed pin attempts',
   'transfer pin configured successfully',
   'transfer could not be completed',
+  'only closed accounts can be permanently deleted',
+  'cannot delete your own admin account',
+  'admin accounts cannot be deleted',
 ];
+
+/**
+ * Returns a user-friendly string message from any error.
+ */
+export function getUserMessage(error: unknown): string {
+  return getFriendlyError(error).message;
+}
 
 /**
  * Translates any error or rejection into a user-friendly object.

@@ -22,6 +22,7 @@ import {
   Check,
   Zap,
   HelpCircle,
+  X,
 } from 'lucide-react';
 import { TransferAuthorization } from '../../features/transfer-auth/types';
 import { TransferAuthSheet } from '../../features/transfer-auth/TransferAuthSheet';
@@ -92,6 +93,18 @@ export const TransferPage: React.FC = () => {
   useEffect(() => {
     loadAccount();
   }, [user]);
+
+  // Close success modal on Escape key press
+  useEffect(() => {
+    if (!successData) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSuccessData(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [successData]);
 
   // Real-time lookup of recipient account number (10 digits)
   useEffect(() => {
@@ -441,10 +454,32 @@ export const TransferPage: React.FC = () => {
 
       {/* ================= SUCCESS MODAL ================= */}
       {successData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-surface-container-lowest max-w-md w-full rounded-2xl p-6 sm:p-7 shadow-2xl relative overflow-hidden flex flex-col gap-5 text-center">
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setSuccessData(null);
+            }
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-surface-container-lowest max-w-md w-full rounded-2xl p-6 pt-8 sm:p-7 sm:pt-9 shadow-2xl relative overflow-hidden flex flex-col gap-5 text-center"
+          >
             {/* Top Accent */}
             <div className="absolute top-0 inset-x-0 h-1.5 bg-emerald-500" />
+
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => setSuccessData(null)}
+              aria-label="Close"
+              className="absolute top-3 right-3 z-10 w-9 h-9 rounded-full bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
 
             <div className="w-16 h-16 rounded-full bg-emerald-500/15 text-emerald-600 flex items-center justify-center mx-auto">
               <Check className="w-8 h-8" />
