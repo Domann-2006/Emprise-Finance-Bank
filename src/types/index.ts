@@ -59,6 +59,9 @@ export interface TransactionRecord {
   balanceAfterCents?: number;
   linkedTransactionId?: string;
   status: TransactionStatus;
+  transferType?: 'internal' | 'ach';
+  routingNumber?: string;
+  accountType?: 'Checking' | 'Savings';
   createdAt: any;
 }
 
@@ -83,7 +86,6 @@ export interface SignUpFormData {
   username: string;
   password: string;
   accountType: '' | 'Checking' | 'Savings';
-  routingNumber?: string;
 }
 
 export interface TransferRequest {

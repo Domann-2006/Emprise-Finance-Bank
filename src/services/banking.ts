@@ -33,7 +33,8 @@ import {
 } from '../types';
 import { generateAccountNumber } from '../utils/format';
 import { hashPin } from '../utils/pin';
-import { ROUTING_NUMBER, APP_NAME } from '../config/brand';
+import { ROUTING_NUMBER, APP_NAME, ACH_PER_TRANSFER_LIMIT_CENTS } from '../config/brand';
+import { isValidRoutingNumber, isOwnRoutingNumber } from '../utils/routing';
 import { TransferAuthorization } from '../features/transfer-auth/types';
 
 /**
@@ -100,7 +101,6 @@ export async function createNewCustomerAccount(
       state: formData.state,
       zip: formData.zip,
     },
-    routingNumber: formData.routingNumber?.trim() || ROUTING_NUMBER,
     role: 'customer',
     status: 'active',
     createdAt: serverTimestamp(),
@@ -162,7 +162,6 @@ export async function adminCreateCustomerAccount(params: {
   dob: string;
   accountType: AccountType;
   openingCents: number;
-  routingNumber?: string;
 }): Promise<{ user: UserProfile; account: BankAccount; accountNumber: string }> {
   const activeDb = db;
   if (!isFirebaseConfigured() || !activeDb) {
@@ -174,14 +173,13 @@ export async function adminCreateCustomerAccount(params: {
         dob: params.dob,
         accountType: params.accountType,
         openingBalanceCents: params.openingCents,
-        routingNumber: params.routingNumber,
       });
       return { user: res.user, account: res.account, accountNumber: res.account.accountNumber };
     }
     throw new Error('Firebase is not configured. Live admin creation is disabled.');
   }
 
-  const { uid, name, username, email, dob, accountType, openingCents, routingNumber } = params;
+  const { uid, name, username, email, dob, accountType, openingCents } = params;
   const cleanUsername = username.trim().toLowerCase();
 
   // 1. Ensure unique account number by checking directory first
@@ -198,7 +196,6 @@ export async function adminCreateCustomerAccount(params: {
     dob,
     phone: '(555) 010-0000',
     address: { street: '120 Financial Plaza', city: 'Chicago', state: 'IL', zip: '60601' },
-    routingNumber: routingNumber?.trim() || ROUTING_NUMBER,
     role: 'customer',
     status: 'active',
     createdAt: serverTimestamp(),
@@ -648,6 +645,7 @@ export async function executeTransferTransaction(params: {
         balanceAfterCents: senderNewBalanceCents,
         linkedTransactionId: recipientTxRef.id,
         status: 'cleared',
+        transferType: 'internal',
         createdAt: serverTimestamp(),
       };
 
@@ -663,6 +661,7 @@ export async function executeTransferTransaction(params: {
         note: note.trim() || 'Incoming Transfer',
         linkedTransactionId: senderTxRef.id,
         status: 'cleared',
+        transferType: 'internal',
         createdAt: serverTimestamp(),
       };
 
@@ -706,6 +705,172 @@ export async function executeTransferTransaction(params: {
     throw err;
   }
 }
+
+/**
+ * Executes an external ACH transfer to another US bank account.
+ * Deducts funds from sender's account atomically, creates a pending debit record with routing & accountType,
+ * and records the pinProof.
+ */
+export async function executeExternalTransfer(params: {
+  senderUid: string;
+  senderAccountId: string;
+  recipientName: string;
+  routingNumber: string;
+  accountNumber: string;
+  accountType: 'Checking' | 'Savings';
+  amountCents: number;
+  note?: string;
+  memo?: string;
+  authorization: TransferAuthorization;
+}): Promise<{
+  amountCents: number;
+  newBalanceCents: number;
+  recipientName: string;
+  routingNumber: string;
+  accountNumber: string;
+  referenceId: string;
+}> {
+  const {
+    senderUid,
+    senderAccountId,
+    recipientName,
+    routingNumber,
+    accountNumber,
+    accountType,
+    amountCents,
+    note,
+    memo,
+    authorization,
+  } = params;
+
+  const finalNote = (memo || note || '').trim();
+
+  // 1. Verify transfer PIN / Biometric assertion first
+  await verifyTransferPin(authorization, senderUid);
+
+  // 2. Validate parameters client-side
+  const cleanRouting = routingNumber.trim();
+  const cleanAccount = accountNumber.trim();
+  const cleanName = recipientName.trim();
+
+  if (!cleanName || cleanName.length < 2 || cleanName.length > 60) {
+    throw new Error('Recipient name must be between 2 and 60 characters.');
+  }
+
+  if (!isValidRoutingNumber(cleanRouting)) {
+    throw new Error('Invalid routing number. Check the 9 digits.');
+  }
+
+  if (isOwnRoutingNumber(cleanRouting)) {
+    throw new Error('This routing number belongs to Emprise Finance. Please use same-bank transfer.');
+  }
+
+  if (cleanAccount.length < 4 || cleanAccount.length > 17 || !/^\d+$/.test(cleanAccount)) {
+    throw new Error('Account number must be between 4 and 17 numeric digits.');
+  }
+
+  if (amountCents <= 0) {
+    throw new Error('Please enter a valid transfer amount greater than $0.00.');
+  }
+
+  if (amountCents > ACH_PER_TRANSFER_LIMIT_CENTS) {
+    throw new Error('ACH transfers are limited to $25,000.00 each.');
+  }
+
+  const activeDb = db;
+  if (!isFirebaseConfigured() || !activeDb) {
+    if (isMockEnabled) {
+      const result = await mockStorage.executeExternalTransfer(params);
+      window.dispatchEvent(new Event('emprise_storage_updated'));
+      return result;
+    }
+    throw new Error('Firebase is not configured. Transfers require an active connection.');
+  }
+
+  const pinHash =
+    authorization.method === 'pin'
+      ? await hashPin(authorization.pin, senderUid)
+      : authorization.pinHash;
+
+  try {
+    return await runTransaction(activeDb, async (transaction) => {
+      // PHASE 1: READ
+      const senderRef = doc(activeDb, 'accounts', senderAccountId);
+      const senderSnap = await transaction.get(senderRef);
+
+      if (!senderSnap.exists()) {
+        throw new Error('Sender account not found.');
+      }
+
+      const senderData = senderSnap.data() as BankAccount;
+      if (senderData.ownerUid !== senderUid) {
+        throw new Error('Unauthorized transfer request.');
+      }
+      if (senderData.status !== 'active') {
+        throw new Error('Your account is currently inactive.');
+      }
+
+      if (senderData.balanceCents < amountCents) {
+        throw new Error(
+          `Insufficient funds. Your available balance is $${(senderData.balanceCents / 100).toFixed(2)}.`
+        );
+      }
+
+      // PHASE 2: CALCULATIONS & REFERENCES
+      const newBalance = senderData.balanceCents - amountCents;
+      const txRef = doc(collection(activeDb, 'transactions'));
+      const pinProofRef = doc(activeDb, 'pinProofs', txRef.id);
+
+      const txDoc: TransactionRecord = {
+        id: txRef.id,
+        accountId: senderData.id,
+        ownerUid: senderData.ownerUid,
+        type: 'debit',
+        amountCents,
+        counterpartyName: cleanName,
+        counterpartyAccount: cleanAccount,
+        note: finalNote || 'ACH External Transfer',
+        balanceAfterCents: newBalance,
+        status: 'pending',
+        transferType: 'ach',
+        routingNumber: cleanRouting,
+        accountType,
+        createdAt: serverTimestamp(),
+      };
+
+      // PHASE 3: WRITES
+      transaction.update(senderRef, {
+        balanceCents: newBalance,
+        lastTransactionId: txRef.id,
+      });
+
+      transaction.set(txRef, txDoc);
+
+      transaction.set(pinProofRef, {
+        uid: senderUid,
+        hash: pinHash,
+        createdAt: serverTimestamp(),
+      });
+
+      return {
+        amountCents,
+        newBalanceCents: newBalance,
+        recipientName: cleanName,
+        routingNumber: cleanRouting,
+        accountNumber: cleanAccount,
+        referenceId: txRef.id,
+      };
+    });
+  } catch (err: any) {
+    if (err?.code === 'permission-denied') {
+      const permError: any = new Error('Transfer could not be completed. Please try again or contact support.');
+      permError.code = 'TRANSFER_PERMISSION';
+      throw permError;
+    }
+    throw err;
+  }
+}
+
 
 /**
  * Admin: Update customer status ("active" | "disabled" | "closed")

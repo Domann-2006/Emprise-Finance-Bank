@@ -4,12 +4,15 @@
  */
 
 export const APP_NAME = "Emprise Finance";
+export const BANK_NAME = APP_NAME;
 export const SUPPORT_PHONE = "210-577-1722";
 export const SUPPORT_PHONE_DISPLAY = "210-577-1722";
 export const SUPPORT_EMAIL = "emprisesuppor@exdonuts.com";
 export const SUPPORT_HOURS = "24 hours a day, 7 days a week, 365 days a year";
-export const ROUTING_NUMBER = "000000000";
-export const WIRE_ROUTING_NUMBER = "000000000";
+export const ROUTING_NUMBER = "381041270";
+export const WIRE_ROUTING_NUMBER = "381041270";
+export const ACH_PER_TRANSFER_LIMIT_CENTS = 2500000; // $25,000
+export const ACH_PROCESSING_TEXT = "1-3 business days";
 export const SWIFT_CODE = "XXXXXXXX";
 export const AUTH_EMAIL_DOMAIN = "emprise.internal";
 export const CURRENT_YEAR = new Date().getFullYear();

@@ -14,6 +14,8 @@ interface TransferAuthSheetProps {
   amountCents: number;
   recipientName: string;
   recipientAccount: string;
+  transferType?: 'internal' | 'ach';
+  routingNumber?: string;
   userUid: string;
   onClose: () => void;
   onForgotPin: () => void;
@@ -27,6 +29,8 @@ export const TransferAuthSheet: React.FC<TransferAuthSheetProps> = ({
   amountCents,
   recipientName,
   recipientAccount,
+  transferType = 'internal',
+  routingNumber,
   userUid,
   onClose,
   onForgotPin,
@@ -261,11 +265,29 @@ export const TransferAuthSheet: React.FC<TransferAuthSheetProps> = ({
           <div className="text-3xl font-extrabold text-on-surface font-ledger-numerical">
             {formatCentsToUSD(amountCents)}
           </div>
-          <div className="pt-2 border-t border-outline-variant/20 flex flex-col sm:flex-row items-center justify-between gap-1 text-xs text-on-surface-variant">
-            <span>
-              To: <strong className="text-on-surface font-semibold">{recipientName}</strong>
-            </span>
-            <span className="font-mono text-[11px]">{maskAccountNumber(recipientAccount)}</span>
+          <div className="pt-2 border-t border-outline-variant/20 flex flex-col gap-1.5 text-xs text-on-surface-variant">
+            <div className="flex items-center justify-between">
+              <span>To:</span>
+              <strong className="text-on-surface font-semibold">{recipientName}</strong>
+            </div>
+            {transferType === 'ach' && (
+              <>
+                <div className="flex items-center justify-between">
+                  <span>Method:</span>
+                  <span className="font-semibold text-primary">Other bank (ACH)</span>
+                </div>
+                {routingNumber && (
+                  <div className="flex items-center justify-between">
+                    <span>Routing:</span>
+                    <span className="font-mono font-semibold text-on-surface">Routing {routingNumber}</span>
+                  </div>
+                )}
+              </>
+            )}
+            <div className="flex items-center justify-between">
+              <span>Destination:</span>
+              <span className="font-mono text-[11px] text-on-surface">{maskAccountNumber(recipientAccount)}</span>
+            </div>
           </div>
           <div className="flex items-center justify-between text-[11px] text-on-surface-variant pt-1 border-t border-outline-variant/10">
             <span>Transaction Fee</span>

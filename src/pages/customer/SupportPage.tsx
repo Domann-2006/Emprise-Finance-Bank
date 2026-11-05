@@ -36,7 +36,7 @@ interface FAQItem {
 
 export const SupportPage: React.FC = () => {
   const { user } = useAuth();
-  const achRoutingNumber = user?.routingNumber || ROUTING_NUMBER;
+  const achRoutingNumber = ROUTING_NUMBER;
   const [searchQuery, setSearchQuery] = useDraftState<string>(null, 'support_search', '');
   const [activeCategory, setActiveCategory] = useState<'all' | 'transfers' | 'cards' | 'accounts' | 'loans'>('all');
   const [openFaqId, setOpenFaqId] = useState<string | null>('q1'); // default expanded

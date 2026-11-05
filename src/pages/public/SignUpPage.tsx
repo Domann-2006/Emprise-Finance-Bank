@@ -47,8 +47,6 @@ export const SignUpPage: React.FC = () => {
     // When restoring a saved draft, ignore a stored state value of 'IL',
     // a stored routingNumber equal to ROUTING_NUMBER, and a stored accountType
     const restoredState = draftData?.state === 'IL' ? '' : (draftData?.state || '');
-    const restoredRouting = draftData?.routingNumber === ROUTING_NUMBER ? '' : (draftData?.routingNumber || '');
-
     return {
       firstName: draftData?.firstName || '',
       lastName: draftData?.lastName || '',
@@ -65,7 +63,6 @@ export const SignUpPage: React.FC = () => {
       username: draftData?.username || '',
       password: '', // NEVER draft or persist password
       accountType: '',
-      routingNumber: restoredRouting,
     };
   });
 
@@ -170,11 +167,6 @@ export const SignUpPage: React.FC = () => {
       setError('Please choose an account type.');
       return;
     }
-    const cleanRouting = (formData.routingNumber || '').trim();
-    if (cleanRouting && !/^\d{9}$/.test(cleanRouting)) {
-      setError('Routing number must be exactly 9 numeric digits.');
-      return;
-    }
     if (!formData.isOver18) {
       setError('Please certify that you are at least 18 years old and agree to the terms.');
       return;
@@ -187,17 +179,13 @@ export const SignUpPage: React.FC = () => {
       return;
     }
 
-    const finalRouting = cleanRouting || ROUTING_NUMBER;
-
     setIsSubmitting(true);
     try {
       const submissionData: SignUpFormData = {
         ...formData,
-        routingNumber: finalRouting,
       };
       const result = await signUp(submissionData);
       if (result.success) {
-        setFormData((prev) => ({ ...prev, routingNumber: finalRouting }));
         clearSignUpDraft();
         setCreatedAccountNumber(result.accountNumber);
         setCurrentStep(4); // Success step!
@@ -628,29 +616,6 @@ export const SignUpPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Routing Number */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-on-surface" htmlFor="reg-routing">
-                Electronic Routing Number (9 Digits)
-              </label>
-              <input
-                id="reg-routing"
-                type="text"
-                inputMode="numeric"
-                maxLength={9}
-                value={formData.routingNumber}
-                onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, '').slice(0, 9);
-                  setFormData({ ...formData, routingNumber: val });
-                }}
-                placeholder="e.g. 000000000"
-                className="w-full h-11 px-3.5 bg-surface-container-low rounded-xl text-sm font-mono text-on-surface focus:outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary/20 border border-outline-variant/30"
-              />
-              <p className="text-[11px] text-on-surface-variant">
-                ABA Routing Number for ACH, direct deposit, and wire transfers.
-              </p>
-            </div>
-
             {/* Username & Password */}
             <div className="space-y-4">
               <div className="space-y-1">
@@ -817,7 +782,7 @@ export const SignUpPage: React.FC = () => {
 
               <div className="flex items-center justify-between pb-2 border-b border-outline-variant/20">
                 <span className="text-xs text-on-surface-variant font-medium">Electronic Routing (ACH)</span>
-                <span className="text-sm font-mono font-bold text-on-surface">{formData.routingNumber || ROUTING_NUMBER}</span>
+                <span className="text-sm font-mono font-bold text-on-surface">{ROUTING_NUMBER}</span>
               </div>
 
               <div className="flex items-center justify-between">

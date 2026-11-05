@@ -29,7 +29,10 @@ import {
   ExternalLink,
   ChevronRight,
   Info,
+  Copy,
+  Check,
 } from 'lucide-react';
+import { BANK_NAME, ROUTING_NUMBER } from '../../config/brand';
 
 export const DashboardPage: React.FC = () => {
   const { user } = useAuth();
@@ -44,6 +47,21 @@ export const DashboardPage: React.FC = () => {
   const [comingSoonToast, setComingSoonToast] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<{ title: string; message: string } | null>(null);
   const [txnsError, setTxnsError] = useState<{ title: string; message: string } | null>(null);
+  const [copiedAccountDetails, setCopiedAccountDetails] = useState(false);
+
+  const handleCopyAccountDetails = () => {
+    if (!account) return;
+    const text = [
+      `Bank: ${BANK_NAME}`,
+      `Routing number: ${ROUTING_NUMBER}`,
+      `Account number: ${account.accountNumber}`,
+      `Account type: ${account.type || 'Checking'}`,
+      `Account holder: ${user?.name || ''}`,
+    ].join('\n');
+    navigator.clipboard.writeText(text);
+    setCopiedAccountDetails(true);
+    setTimeout(() => setCopiedAccountDetails(false), 2000);
+  };
 
   const unsubscribeTxnsRef = useRef<(() => void) | null>(null);
   const unsubscribeAcctRef = useRef<(() => void) | null>(null);
@@ -241,10 +259,30 @@ export const DashboardPage: React.FC = () => {
               </span>
               <span className="text-xs font-semibold text-secondary-fixed">USD</span>
             </div>
-            <div className="flex items-center gap-4 mt-2 text-xs text-secondary-fixed-dim">
-              <span>Account Number: <strong className="text-white font-mono">{account.accountNumber}</strong></span>
-              <span>•</span>
-              <span className="text-emerald-400 font-medium">Cleared Funds</span>
+            <div className="flex flex-wrap items-center justify-between gap-2 mt-2 text-xs text-secondary-fixed-dim">
+              <div className="flex items-center gap-3">
+                <span>Account Number: <strong className="text-white font-mono">{account.accountNumber}</strong></span>
+                <span>•</span>
+                <span className="text-emerald-400 font-medium">Cleared Funds</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyAccountDetails}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-medium text-xs transition-colors"
+                title="Copy full account and routing details"
+              >
+                {copiedAccountDetails ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-emerald-300 font-semibold">Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy account details</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
 

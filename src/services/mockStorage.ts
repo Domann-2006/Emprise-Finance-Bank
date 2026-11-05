@@ -7,7 +7,7 @@
 import { UserProfile, BankAccount, AccountDirectoryEntry, TransactionRecord, SignUpFormData, AccountType } from '../types';
 import { generateAccountNumber } from '../utils/format';
 import { hashPin } from '../utils/pin';
-import { ROUTING_NUMBER, APP_NAME } from '../config/brand';
+import { ROUTING_NUMBER, APP_NAME, ACH_PER_TRANSFER_LIMIT_CENTS } from '../config/brand';
 import { TransferAuthorization } from '../features/transfer-auth/types';
 
 const STORAGE_USERS_KEY = 'emprise_users_v1';
@@ -38,7 +38,6 @@ const INITIAL_USERS: UserProfile[] = [
     address: { street: '420 N Michigan Ave', apt: 'Apt 14B', city: 'Chicago', state: 'IL', zip: '60611' },
     role: 'customer',
     status: 'active',
-    routingNumber: ROUTING_NUMBER,
     createdAt: new Date('2024-02-15').toISOString(),
   },
   {
@@ -51,7 +50,6 @@ const INITIAL_USERS: UserProfile[] = [
     address: { street: '780 S Wacker Dr', city: 'Chicago', state: 'IL', zip: '60606' },
     role: 'customer',
     status: 'active',
-    routingNumber: ROUTING_NUMBER,
     createdAt: new Date('2024-03-01').toISOString(),
   },
   {
@@ -64,7 +62,6 @@ const INITIAL_USERS: UserProfile[] = [
     address: { street: '100 W Randolph St', city: 'Chicago', state: 'IL', zip: '60601' },
     role: 'customer',
     status: 'active',
-    routingNumber: ROUTING_NUMBER,
     createdAt: new Date('2024-03-10').toISOString(),
   },
   {
@@ -77,7 +74,6 @@ const INITIAL_USERS: UserProfile[] = [
     address: { street: '222 Lake Shore Dr', city: 'Chicago', state: 'IL', zip: '60611' },
     role: 'customer',
     status: 'disabled', // Disabled account for testing disabled auth guards
-    routingNumber: ROUTING_NUMBER,
     createdAt: new Date('2024-04-05').toISOString(),
   },
 ];
@@ -380,7 +376,6 @@ class MockStorageService {
       },
       role: 'customer',
       status: 'active',
-      routingNumber: formData.routingNumber?.trim() || ROUTING_NUMBER,
       createdAt: new Date().toISOString(),
     };
 
@@ -415,7 +410,6 @@ class MockStorageService {
     dob: string;
     accountType: 'Checking' | 'Savings';
     openingBalanceCents: number;
-    routingNumber?: string;
   }): { user: UserProfile; account: BankAccount } {
     const cleanUsername = params.username.trim().toLowerCase();
     if (this.getUserByUsername(cleanUsername)) {
@@ -436,7 +430,6 @@ class MockStorageService {
       address: { street: '120 Main Street', city: 'Chicago', state: 'IL', zip: '60601' },
       role: 'customer',
       status: 'active',
-      routingNumber: params.routingNumber?.trim() || ROUTING_NUMBER,
       createdAt: new Date().toISOString(),
     };
 
@@ -607,6 +600,7 @@ class MockStorageService {
       balanceAfterCents: senderAccount.balanceCents,
       linkedTransactionId: recipientTxId,
       status: 'cleared',
+      transferType: 'internal',
       createdAt: now,
     });
 
@@ -622,6 +616,7 @@ class MockStorageService {
       note: note.trim() || 'Incoming Account Transfer',
       linkedTransactionId: senderTxId,
       status: 'cleared',
+      transferType: 'internal',
       createdAt: now,
     });
 
@@ -629,6 +624,111 @@ class MockStorageService {
     return {
       senderNewBalanceCents: senderAccount.balanceCents,
       recipientName: recipientDir.ownerName,
+    };
+  }
+
+  async executeExternalTransfer(params: {
+    senderAccountId: string;
+    senderUid: string;
+    recipientName: string;
+    routingNumber: string;
+    accountNumber: string;
+    accountType: 'Checking' | 'Savings';
+    amountCents: number;
+    note?: string;
+    memo?: string;
+    authorization: TransferAuthorization;
+  }): Promise<{
+    amountCents: number;
+    newBalanceCents: number;
+    recipientName: string;
+    routingNumber: string;
+    accountNumber: string;
+    referenceId: string;
+  }> {
+    const {
+      senderAccountId,
+      senderUid,
+      recipientName,
+      routingNumber,
+      accountNumber,
+      accountType,
+      amountCents,
+      note,
+      memo,
+      authorization,
+    } = params;
+
+    const finalNote = (memo || note || '').trim();
+
+    if (amountCents <= 0) {
+      throw new Error('Please enter a valid transfer amount greater than $0.00.');
+    }
+    if (amountCents > ACH_PER_TRANSFER_LIMIT_CENTS) {
+      throw new Error('ACH transfers are limited to $25,000.00 each.');
+    }
+
+    // Verify PIN if sender has configured a PIN
+    const senderUser = this.users.find((u) => u.uid === senderUid);
+    const storedHash = this.getPinHash(senderUid);
+    if (senderUser?.hasPin && storedHash) {
+      const computedHash =
+        authorization.method === 'pin'
+          ? await hashPin(authorization.pin, senderUid)
+          : authorization.pinHash;
+      if (storedHash !== computedHash) {
+        if (authorization.method === 'biometric') {
+          const err: any = new Error('Biometric authorization is stale. Please re-enter your PIN.');
+          err.code = 'BIOMETRIC_STALE';
+          throw err;
+        }
+        const err: any = new Error('Incorrect PIN.');
+        err.code = 'WRONG_PIN';
+        throw err;
+      }
+    }
+
+    const senderAccount = this.accounts.find((a) => a.id === senderAccountId);
+    if (!senderAccount) throw new Error('Sender account not found.');
+    if (senderAccount.ownerUid !== senderUid) throw new Error('Unauthorized transfer request.');
+    if (senderAccount.status !== 'active') throw new Error('Your account is currently inactive.');
+
+    if (senderAccount.balanceCents < amountCents) {
+      throw new Error(
+        `Insufficient funds. Your available balance is $${(senderAccount.balanceCents / 100).toFixed(2)}.`
+      );
+    }
+
+    // Atomic update
+    senderAccount.balanceCents -= amountCents;
+    const now = new Date().toISOString();
+    const txId = 'tx_ach_' + Math.random().toString(36).substring(2, 9);
+
+    this.transactions.push({
+      id: txId,
+      accountId: senderAccount.id,
+      ownerUid: senderAccount.ownerUid,
+      type: 'debit',
+      amountCents,
+      counterpartyName: recipientName.trim(),
+      counterpartyAccount: accountNumber.trim(),
+      note: finalNote || 'ACH External Transfer',
+      balanceAfterCents: senderAccount.balanceCents,
+      status: 'pending',
+      transferType: 'ach',
+      routingNumber: routingNumber.trim(),
+      accountType,
+      createdAt: now,
+    });
+
+    this.saveState();
+    return {
+      amountCents,
+      newBalanceCents: senderAccount.balanceCents,
+      recipientName: recipientName.trim(),
+      routingNumber: routingNumber.trim(),
+      accountNumber: accountNumber.trim(),
+      referenceId: txId,
     };
   }
 }

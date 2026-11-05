@@ -8,7 +8,7 @@ import { formatDateTime, maskAccountNumber } from '../../utils/format';
 import { UserStatusBadge } from '../../components/common/StatusBadge';
 import { UserAvatar } from '../../components/common/UserAvatar';
 import { PhotoViewerModal } from '../../components/common/PhotoViewerModal';
-import { APP_NAME, deriveAuthEmail, ROUTING_NUMBER } from '../../config/brand';
+import { APP_NAME, BANK_NAME, deriveAuthEmail, ROUTING_NUMBER } from '../../config/brand';
 import { isFirebaseConfigured, isMockEnabled, auth } from '../../services/firebase';
 import {
   EmailAuthProvider,
@@ -35,6 +35,7 @@ import {
   Camera,
   Upload,
   Trash2,
+  Copy,
 } from 'lucide-react';
 import { BiometricSettingsCard } from '../../components/profile/BiometricSettingsCard';
 import { isWeakPin } from '../../utils/pin';
@@ -79,22 +80,39 @@ export const ProfilePage: React.FC = () => {
   // Form Fields State with draft persistence
   const [email, setEmail, clearEmailDraft] = useDraftState(user?.uid, 'profile_email', user?.email || '');
   const [phone, setPhone, clearPhoneDraft] = useDraftState(user?.uid, 'profile_phone', user?.phone || '');
-  const [routingNumber, setRoutingNumber, clearRoutingNumberDraft] = useDraftState(
-    user?.uid,
-    'profile_routing',
-    user?.routingNumber || ''
-  );
   const [street, setStreet, clearStreetDraft] = useDraftState(user?.uid, 'profile_street', user?.address?.street || '');
   const [apt, setApt, clearAptDraft] = useDraftState(user?.uid, 'profile_apt', user?.address?.apt || '');
   const [city, setCity, clearCityDraft] = useDraftState(user?.uid, 'profile_city', user?.address?.city || '');
   const [state, setState, clearStateDraft] = useDraftState(user?.uid, 'profile_state', user?.address?.state || '');
   const [zip, setZip, clearZipDraft] = useDraftState(user?.uid, 'profile_zip', user?.address?.zip || '');
 
+  // Copy feedback states
+  const [copiedRouting, setCopiedRouting] = useState(false);
+  const [copiedDetails, setCopiedDetails] = useState(false);
+
+  const handleCopyRouting = () => {
+    navigator.clipboard.writeText(ROUTING_NUMBER);
+    setCopiedRouting(true);
+    setTimeout(() => setCopiedRouting(false), 2000);
+  };
+
+  const handleCopyAccountDetails = () => {
+    const text = [
+      `Bank: ${BANK_NAME}`,
+      `Routing number: ${ROUTING_NUMBER}`,
+      `Account number: ${account?.accountNumber || ''}`,
+      `Account type: ${account?.type || 'Checking'}`,
+      `Account holder: ${user?.name || ''}`,
+    ].join('\n');
+    navigator.clipboard.writeText(text);
+    setCopiedDetails(true);
+    setTimeout(() => setCopiedDetails(false), 2000);
+  };
+
   // Field validation errors
   const [fieldErrors, setFieldErrors] = useState<{
     email?: string;
     phone?: string;
-    routingNumber?: string;
     street?: string;
     city?: string;
     state?: string;
@@ -126,7 +144,6 @@ export const ProfilePage: React.FC = () => {
   const resetProfileFields = () => {
     setEmail(user?.email || '');
     setPhone(user?.phone || '');
-    setRoutingNumber(user?.routingNumber || '');
     setStreet(user?.address?.street || '');
     setApt(user?.address?.apt || '');
     setCity(user?.address?.city || '');
@@ -134,7 +151,6 @@ export const ProfilePage: React.FC = () => {
     setZip(user?.address?.zip || '');
     clearEmailDraft();
     clearPhoneDraft();
-    clearRoutingNumberDraft();
     clearStreetDraft();
     clearAptDraft();
     clearCityDraft();
@@ -148,7 +164,6 @@ export const ProfilePage: React.FC = () => {
     if (user && !isEditing) {
       setEmail(user.email || '');
       setPhone(user.phone || '');
-      setRoutingNumber(user.routingNumber || '');
       setStreet(user.address?.street || '');
       setApt(user.address?.apt || '');
       setCity(user.address?.city || '');
@@ -323,7 +338,6 @@ export const ProfilePage: React.FC = () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const cleanEmail = email.trim();
     const cleanPhone = phone.trim();
-    const cleanRouting = routingNumber.trim();
     const cleanStreet = street.trim();
     const cleanCity = city.trim();
     const cleanState = state.trim().toUpperCase();
@@ -340,12 +354,6 @@ export const ProfilePage: React.FC = () => {
       errs.phone = 'Mobile phone is required.';
     } else if (digits.length < 10) {
       errs.phone = 'Phone number must contain at least 10 digits.';
-    }
-
-    if (!cleanRouting) {
-      errs.routingNumber = 'Routing number is required.';
-    } else if (!/^\d{9}$/.test(cleanRouting)) {
-      errs.routingNumber = 'Routing number must be exactly 9 digits.';
     }
 
     if (!cleanStreet) {
@@ -379,7 +387,6 @@ export const ProfilePage: React.FC = () => {
     const res = await updateProfile({
       email: cleanEmail,
       phone: cleanPhone,
-      routingNumber: cleanRouting,
       address: {
         street: cleanStreet,
         apt: apt.trim(),
@@ -394,7 +401,6 @@ export const ProfilePage: React.FC = () => {
     if (res.success) {
       clearEmailDraft();
       clearPhoneDraft();
-      clearRoutingNumberDraft();
       clearStreetDraft();
       clearAptDraft();
       clearCityDraft();
@@ -802,59 +808,70 @@ export const ProfilePage: React.FC = () => {
           </div>
         )}
 
-        {/* Read-Only Account Credentials and Editable Routing */}
+        {/* Read-Only Account Credentials and Bank-Wide Routing */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
-          <div className="p-3.5 bg-surface-container-low rounded-xl">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-on-surface-variant">Primary Account</span>
-              <Lock className="w-3 h-3 text-on-surface-variant/50" />
+          <div className="p-3.5 bg-surface-container-low rounded-xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-on-surface-variant font-medium">Primary Account</span>
+                <Lock className="w-3 h-3 text-on-surface-variant/50" />
+              </div>
+              <span className="text-sm font-bold text-on-surface block">
+                Community {account?.type || 'Checking'}
+              </span>
+              <span className="text-xs font-mono text-primary font-medium mt-0.5 block">
+                {account?.accountNumber ? account.accountNumber : '•••• ----'}
+              </span>
             </div>
-            <span className="text-sm font-bold text-on-surface block">
-              Community {account?.type || 'Checking'}
-            </span>
-            <span className="text-xs font-mono text-primary font-medium mt-0.5 block">
-              {account?.accountNumber ? account.accountNumber : '•••• ----'}
-            </span>
+            <div className="mt-2.5 pt-2 border-t border-outline-variant/20 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={handleCopyAccountDetails}
+                className="text-[11px] font-semibold text-primary hover:text-primary/80 flex items-center gap-1 transition-colors"
+              >
+                {copiedDetails ? (
+                  <>
+                    <Check className="w-3 h-3 text-emerald-600" />
+                    <span className="text-emerald-600">Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3 h-3" />
+                    <span>Copy account details</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
-          <div className="p-3.5 bg-surface-container-low rounded-xl">
-            <div className="flex items-center justify-between mb-1">
-              <label htmlFor="profileRouting" className="text-on-surface-variant font-medium">
-                Electronic Routing
-              </label>
-            </div>
-            {isEditing ? (
-              <div className="space-y-1">
-                <input
-                  id="profileRouting"
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={9}
-                  value={routingNumber}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/\D/g, '').slice(0, 9);
-                    setRoutingNumber(val);
-                    if (fieldErrors.routingNumber) setFieldErrors((p) => ({ ...p, routingNumber: undefined }));
-                  }}
-                  disabled={isSaving}
-                  placeholder={ROUTING_NUMBER}
-                  className={`w-full h-9 px-3 bg-surface-container-lowest rounded-lg text-sm font-mono text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 border transition-colors ${
-                    fieldErrors.routingNumber ? 'border-error ring-1 ring-error/20' : 'border-outline-variant/30'
-                  }`}
-                />
-                {fieldErrors.routingNumber && (
-                  <p className="text-xs text-error font-medium">{fieldErrors.routingNumber}</p>
-                )}
-                <span className="text-[11px] text-on-surface-variant block">ACH / Direct Deposit</span>
+          <div className="p-3.5 bg-surface-container-low rounded-xl flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-on-surface-variant font-medium">Electronic Routing</span>
+                <button
+                  type="button"
+                  onClick={handleCopyRouting}
+                  aria-label="Copy routing number"
+                  className="text-on-surface-variant hover:text-on-surface p-1 rounded transition-colors flex items-center gap-1 text-[11px]"
+                >
+                  {copiedRouting ? (
+                    <span className="text-emerald-600 font-semibold flex items-center gap-0.5">
+                      <Check className="w-3 h-3" /> Copied
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-0.5 text-primary hover:underline">
+                      <Copy className="w-3 h-3" /> Copy
+                    </span>
+                  )}
+                </button>
               </div>
-            ) : (
-              <>
-                <span className="text-sm font-bold text-on-surface font-mono block">
-                  {user?.routingNumber || ROUTING_NUMBER}
-                </span>
-                <span className="text-xs text-on-surface-variant mt-0.5 block">ACH / Direct Deposit</span>
-              </>
-            )}
+              <span className="text-sm font-bold text-on-surface font-mono block">
+                {ROUTING_NUMBER}
+              </span>
+            </div>
+            <span className="text-[11px] text-on-surface-variant mt-2 block">
+              ACH / Direct Deposit • Bank-wide
+            </span>
           </div>
         </div>
 
