@@ -11,6 +11,7 @@ import {
 import { db, isFirebaseConfigured, isMockEnabled } from '../../services/firebase';
 import { mockStorage } from '../../services/mockStorage';
 import { TransactionRecord } from '../../types';
+import { randomSettleAtMs } from '../../config/brand';
 
 function extractMillis(val: any): number | null {
   if (!val) return null;
@@ -30,7 +31,7 @@ function computeSettleMs(tx: TransactionRecord): number {
   if (settleAtMs !== null) return settleAtMs;
 
   const createdAtMs = extractMillis(tx.createdAt);
-  if (createdAtMs !== null) return createdAtMs + 120000;
+  if (createdAtMs !== null) return randomSettleAtMs(createdAtMs);
 
   return Date.now();
 }

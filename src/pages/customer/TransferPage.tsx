@@ -889,7 +889,7 @@ export const TransferPage: React.FC = () => {
                 <span>Standard Delivery</span>
               </div>
               <span className="font-semibold text-primary">
-                Fee: $0.00 • Usually completes within 2 minutes
+                Fee: $0.00 • Usually completes within 3 working days
               </span>
             </div>
 
@@ -959,7 +959,7 @@ export const TransferPage: React.FC = () => {
                 </span>
                 <h3 className="text-xl font-bold text-on-surface mt-1">ACH Transfer Processing</h3>
                 <p className="text-xs text-on-surface-variant mt-1">
-                  Your transfer to {successData.recipientName} is being processed and should complete within 2 minutes.
+                  Your transfer to {successData.recipientName} is being processed and should complete within 3 working days.
                 </p>
               </div>
             ) : (

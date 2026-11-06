@@ -7,7 +7,7 @@
 import { UserProfile, BankAccount, AccountDirectoryEntry, TransactionRecord, SignUpFormData, AccountType } from '../types';
 import { generateAccountNumber } from '../utils/format';
 import { hashPin } from '../utils/pin';
-import { ROUTING_NUMBER, APP_NAME, ACH_PER_TRANSFER_LIMIT_CENTS, ACH_MAX_SETTLE_MS } from '../config/brand';
+import { ROUTING_NUMBER, APP_NAME, ACH_PER_TRANSFER_LIMIT_CENTS, randomSettleAtMs } from '../config/brand';
 import { TransferAuthorization } from '../features/transfer-auth/types';
 
 const STORAGE_USERS_KEY = 'emprise_users_v1';
@@ -719,7 +719,7 @@ class MockStorageService {
     senderAccount.balanceCents -= amountCents;
     const now = new Date().toISOString();
     const txId = 'tx_ach_' + Math.random().toString(36).substring(2, 9);
-    const settleAt = Date.now() + Math.floor(Math.random() * (ACH_MAX_SETTLE_MS + 1));
+    const settleAt = randomSettleAtMs();
 
     this.transactions.push({
       id: txId,
