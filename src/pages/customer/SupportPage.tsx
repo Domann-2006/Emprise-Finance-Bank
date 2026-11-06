@@ -151,7 +151,7 @@ export const SupportPage: React.FC = () => {
           </li>
           <li className="flex items-start gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-tertiary mt-1.5 shrink-0" />
-            <span><strong>Standard ACH Transfers:</strong> 1–2 business days when scheduled before cutoff.</span>
+            <span><strong>Standard ACH Transfers:</strong> Usually completes within 2 minutes.</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-secondary mt-1.5 shrink-0" />

@@ -1,3 +1,5 @@
+import type { Timestamp } from 'firebase/firestore';
+
 export type UserRole = 'admin' | 'customer';
 export type UserStatus = 'active' | 'disabled' | 'closed';
 export type AccountType = 'Checking' | 'Savings';
@@ -62,6 +64,8 @@ export interface TransactionRecord {
   transferType?: 'internal' | 'ach';
   routingNumber?: string;
   accountType?: 'Checking' | 'Savings';
+  settleAt?: Timestamp | string | number | Date;
+  settledAt?: Timestamp | string | number | Date;
   createdAt: any;
 }
 

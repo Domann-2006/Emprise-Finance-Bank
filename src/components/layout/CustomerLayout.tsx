@@ -21,6 +21,10 @@ import { UserStatusBadge } from '../common/StatusBadge';
 import { ConnectionBanner } from '../common/ConnectionBanner';
 import { UserAvatar } from '../common/UserAvatar';
 import { PhotoViewerModal } from '../common/PhotoViewerModal';
+import { Toast, ToastMessage } from '../common/Toast';
+import { useAchSettlement } from '../../features/settlement/useAchSettlement';
+import { TransactionRecord } from '../../types';
+import { formatCentsToUSD } from '../../utils/format';
 
 export const CustomerLayout: React.FC = () => {
   const { user, logout } = useAuth();
@@ -30,6 +34,22 @@ export const CustomerLayout: React.FC = () => {
   const [isAvatarMenuOpen, setIsAvatarMenuOpen] = React.useState(false);
   const [isPhotoViewerOpen, setIsPhotoViewerOpen] = React.useState(false);
   const avatarMenuRef = React.useRef<HTMLDivElement>(null);
+
+  // Settlement toast queue
+  const [toastQueue, setToastQueue] = React.useState<ToastMessage[]>([]);
+
+  const handleSettled = React.useCallback((tx: TransactionRecord) => {
+    const formattedAmount = formatCentsToUSD(tx.amountCents);
+    const msg = `Transfer of ${formattedAmount} to ${tx.counterpartyName} was successful.`;
+    setToastQueue((prev) => [...prev, { id: `${tx.id}-${Date.now()}`, text: msg }]);
+  }, []);
+
+  const handleDismissToast = React.useCallback(() => {
+    setToastQueue((prev) => prev.slice(1));
+  }, []);
+
+  // Run ACH settlement only for customers, never for admins
+  useAchSettlement(user?.role === 'customer' ? user.uid : undefined, handleSettled);
 
   // Close avatar dropdown on outside click or Escape key
   React.useEffect(() => {
@@ -329,6 +349,9 @@ export const CustomerLayout: React.FC = () => {
           })}
         </div>
       </nav>
+
+      {/* Settlement Toast Notification Queue */}
+      <Toast toast={toastQueue[0] || null} onDismiss={handleDismissToast} />
 
       {/* Full-Screen Photo Viewer */}
       <PhotoViewerModal

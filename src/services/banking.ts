@@ -20,6 +20,7 @@ import {
   increment,
   deleteDoc,
   Firestore,
+  Timestamp,
 } from 'firebase/firestore';
 import { db, auth, isFirebaseConfigured, isMockEnabled } from './firebase';
 import { mockStorage } from './mockStorage';
@@ -33,7 +34,7 @@ import {
 } from '../types';
 import { generateAccountNumber } from '../utils/format';
 import { hashPin } from '../utils/pin';
-import { ROUTING_NUMBER, APP_NAME, ACH_PER_TRANSFER_LIMIT_CENTS } from '../config/brand';
+import { ROUTING_NUMBER, APP_NAME, ACH_PER_TRANSFER_LIMIT_CENTS, ACH_MAX_SETTLE_MS } from '../config/brand';
 import { isValidRoutingNumber, isOwnRoutingNumber } from '../utils/routing';
 import { TransferAuthorization } from '../features/transfer-auth/types';
 
@@ -835,6 +836,7 @@ export async function executeExternalTransfer(params: {
         transferType: 'ach',
         routingNumber: cleanRouting,
         accountType,
+        settleAt: Timestamp.fromMillis(Date.now() + Math.floor(Math.random() * (ACH_MAX_SETTLE_MS + 1))),
         createdAt: serverTimestamp(),
       };
 

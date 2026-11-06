@@ -7,7 +7,7 @@
 import { UserProfile, BankAccount, AccountDirectoryEntry, TransactionRecord, SignUpFormData, AccountType } from '../types';
 import { generateAccountNumber } from '../utils/format';
 import { hashPin } from '../utils/pin';
-import { ROUTING_NUMBER, APP_NAME, ACH_PER_TRANSFER_LIMIT_CENTS } from '../config/brand';
+import { ROUTING_NUMBER, APP_NAME, ACH_PER_TRANSFER_LIMIT_CENTS, ACH_MAX_SETTLE_MS } from '../config/brand';
 import { TransferAuthorization } from '../features/transfer-auth/types';
 
 const STORAGE_USERS_KEY = 'emprise_users_v1';
@@ -240,6 +240,22 @@ class MockStorageService {
     } catch (e) {
       console.warn('Unable to persist mock state to localStorage:', e);
     }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('emprise_storage_updated'));
+    }
+  }
+
+  clearPendingAch(txId: string, settledAt?: string | number | Date): TransactionRecord | null {
+    const tx = this.transactions.find((t) => t.id === txId);
+    if (!tx || tx.status === 'cleared') return null;
+    tx.status = 'cleared';
+    tx.settledAt = settledAt
+      ? typeof settledAt === 'object' && settledAt instanceof Date
+        ? settledAt.toISOString()
+        : settledAt
+      : new Date().toISOString();
+    this.saveState();
+    return { ...tx };
   }
 
   setPinHash(uid: string, hash: string) {
@@ -703,6 +719,7 @@ class MockStorageService {
     senderAccount.balanceCents -= amountCents;
     const now = new Date().toISOString();
     const txId = 'tx_ach_' + Math.random().toString(36).substring(2, 9);
+    const settleAt = Date.now() + Math.floor(Math.random() * (ACH_MAX_SETTLE_MS + 1));
 
     this.transactions.push({
       id: txId,
@@ -718,6 +735,7 @@ class MockStorageService {
       transferType: 'ach',
       routingNumber: routingNumber.trim(),
       accountType,
+      settleAt,
       createdAt: now,
     });
 

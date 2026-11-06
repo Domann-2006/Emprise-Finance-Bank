@@ -91,10 +91,17 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ 
           </div>
           <div className="mt-2 flex items-center justify-center gap-2">
             {isAch ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-800 border border-amber-500/20">
-                <Clock className="w-3 h-3 text-amber-700" />
-                <span>Pending</span>
-              </span>
+              tx.status === 'cleared' ? (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-800 border border-emerald-500/20">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  <span>Successful</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/15 text-amber-800 border border-amber-500/20">
+                  <Clock className="w-3 h-3 text-amber-700" />
+                  <span>Pending</span>
+                </span>
+              )
             ) : (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-800 border border-emerald-500/20">
                 <CheckCircle2 className="w-3 h-3 text-emerald-600" />
@@ -140,12 +147,23 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({ 
               )}
               <div className="flex justify-between items-center">
                 <span className="text-on-surface-variant">Transfer method:</span>
-                <span className="font-semibold text-primary">ACH ({ACH_PROCESSING_TEXT})</span>
+                <span className="font-semibold text-primary">
+                  {tx.status === 'cleared' ? 'ACH' : `ACH (${ACH_PROCESSING_TEXT})`}
+                </span>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-on-surface-variant">Expected arrival:</span>
-                <span className="font-semibold text-on-surface">{ACH_PROCESSING_TEXT}</span>
-              </div>
+              {tx.status === 'cleared' ? (
+                <div className="flex justify-between items-center">
+                  <span className="text-on-surface-variant">Completed:</span>
+                  <span className="font-semibold text-on-surface">
+                    {formatDateTime(tx.settledAt || tx.createdAt)}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex justify-between items-center">
+                  <span className="text-on-surface-variant">Expected arrival:</span>
+                  <span className="font-semibold text-on-surface">{ACH_PROCESSING_TEXT}</span>
+                </div>
+              )}
             </>
           )}
 

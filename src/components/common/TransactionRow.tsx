@@ -53,9 +53,15 @@ export const TransactionRow: React.FC<TransactionRowProps> = React.memo(({ tx, v
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-primary/10 text-primary">
                     ACH transfer
                   </span>
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-800">
-                    Pending
-                  </span>
+                  {tx.status === 'cleared' ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-800">
+                      Successful
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-800">
+                      Pending
+                    </span>
+                  )}
                 </div>
               ) : (
                 <TransactionBadge type={tx.type} status={tx.status} />
